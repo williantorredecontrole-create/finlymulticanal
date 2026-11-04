@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Finly - painel de teste</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 24px auto; padding: 0 16px; }
+  input, textarea, button { font: inherit; padding: 8px; margin: 4px 0; width: 100%; box-sizing: border-box; }
+  button { cursor: pointer; }
+  .row { border-bottom: 1px solid #8884; padding: 8px 0; cursor: pointer; }
+  small { opacity: .7; }
+  .msg { padding: 4px 8px; margin: 4px 0; border-radius: 8px; max-width: 80%; }
+  .in { background: #8882; }
+  .out { background: #2a9d8f55; margin-left: auto; }
+</style>
+</head>
+<body>
+<h2>Finly - painel de teste</h2>
+
+<label>Chave do Finly (FINLY_API_KEY)
+  <input id="key" type="password" autocomplete="off">
+</label>
+<label>Numero com DDD
+  <input id="num" placeholder="62999999999">
+</label>
+<label>Mensagem
+  <textarea id="txt" rows="3"></textarea>
+</label>
+<button id="send">Enviar</button>
+<p id="out"></p>
+
+<h3>Conversas</h3>
+<button id="load">Atualizar</button>
+<div id="list"></div>
+<h3>Mensagens</h3>
+<div id="msgs"><small>Clique em uma conversa.</small></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+async function api(path, options = {}) {
+  const res = await fetch('/api' + path, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', 'x-api-key': $('key').value.trim() },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'erro ' + res.status);
+  return data;
+}
+
+$('send').onclick = async () => {
+  $('out').textContent = 'Enviando...';
+  try {
+    await api('/send', { method: 'POST', body: JSON.stringify({ number: $('num').value, text: $('txt').value }) });
+    $('out').textContent = 'Enviado!';
+    $('txt').value = '';
+    loadList();
+  } catch (e) {
+    $('out').textContent = 'Erro: ' + e.message;
+  }
+};
+
+async function loadList() {
+  const list = $('list');
+  list.textContent = '';
+  try {
+    const convs = await api('/conversations');
+    if (!convs.length) list.textContent = 'Nenhuma conversa ainda.';
+    for (const c of convs) {
+      const div = document.createElement('div');
+      div.className = 'row';
+      const title = document.createElement('b');
+      title.textContent = (c.contact && (c.contact.name || c.contact.phone)) || c.external_chat_id;
+      const prev = document.createElement('div');
+      prev.textContent = c.last_message_preview || '';
+      const small = document.createElement('small');
+      small.textContent = c.unread_count ? c.unread_count + ' nao lida(s)' : '';
+      div.append(title, prev, small);
+      div.onclick = () => loadMsgs(c.id);
+      list.append(div);
+    }
+  } catch (e) {
+    list.textContent = 'Erro: ' + e.message;
+  }
+}
+
+async function loadMsgs(id) {
+  const box = $('msgs');
+  box.textContent = '';
+  try {
+    const msgs = await api('/conversations/' + id + '/messages');
+    for (const m of msgs) {
+      const d = document.createElement('div');
+      d.className = 'msg ' + (m.direction === 'in' ? 'in' : 'out');
+      d.textContent = (m.body || '') + (m.direction === 'out' ? '  (' + m.status + ')' : '');
+      box.append(d);
+    }
+  } catch (e) {
+    box.textContent = 'Erro: ' + e.message;
+  }
+}
+
+$('load').onclick = loadList;
+</script>
+</body>
+</html>
