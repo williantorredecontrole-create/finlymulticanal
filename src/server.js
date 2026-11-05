@@ -5,6 +5,7 @@ import webhook from './routes/webhook.js';
 import api from './routes/api.js';
 import authRoutes from './routes/auth.js';
 import { ensureAdmin } from './services/auth.js';
+import { ensureMediaBucket } from './services/media.js';
 import { getChannelByInstance } from './services/messaging.js';
 import { startCampaignWorker } from './services/campaigns.js';
 
@@ -26,10 +27,25 @@ app.use('/auth', authRoutes);
 app.get('/inbox', (_req, res) => res.sendFile(path.join(here, '..', 'public', 'inbox.html')));
 app.use('/api', api);
 
+// Erros previsiveis em JSON (em vez de pagina HTML de erro)
+app.use((err, _req, res, _next) => {
+  if (err?.type === 'entity.too.large') return res.status(413).json({ error: 'arquivo muito grande (maximo 20 MB)' });
+  if (err?.type === 'entity.parse.failed') return res.status(400).json({ error: 'JSON invalido' });
+  console.error('Erro nao tratado:', err);
+  res.status(500).json({ error: 'erro interno' });
+});
+
 const port = process.env.PORT || 3000;
 app.listen(port, '0.0.0.0', async () => {
   console.log(`Finly rodando na porta ${port}`);
   startCampaignWorker();
+
+  try {
+    await ensureMediaBucket();
+    console.log('Pasta de midia pronta.');
+  } catch (e) {
+    console.error('Nao foi possivel preparar a pasta de midia:', e.message);
+  }
 
   try {
     await ensureAdmin();

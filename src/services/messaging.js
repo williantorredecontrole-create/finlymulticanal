@@ -1,5 +1,6 @@
 import { supabase } from '../db.js';
 import * as evolution from '../adapters/evolution.js';
+import { defaultName, kindFromMime, mediaPath, previewFor, uploadMedia } from './media.js';
 
 // ---------- utilidades ----------
 
@@ -114,7 +115,7 @@ async function touchConversation(conversationId, preview, inbound, at = new Date
 // ---------- mensagens recebidas (via webhook) ----------
 
 // Salva uma mensagem vinda do webhook. Retorna null se ja existia (duplicada).
-export async function saveMessage({ channel, conversation, direction, type, body, externalId, timestamp }) {
+export async function saveMessage({ channel, conversation, direction, type, body, preview, externalId, timestamp }) {
   const { data, error } = await supabase
     .from('messages')
     .upsert(
@@ -135,7 +136,7 @@ export async function saveMessage({ channel, conversation, direction, type, body
   if (error) throw error;
   if (!data || data.length === 0) return null;
 
-  await touchConversation(conversation.id, body, direction === 'in', timestamp);
+  await touchConversation(conversation.id, preview ?? body, direction === 'in', timestamp);
   return data[0];
 }
 
@@ -159,6 +160,9 @@ export async function updateMessageStatus(channelId, externalId, status) {
 
 // ---------- envio ----------
 
+// Campos que so o painel conhece e que precisam sobreviver se o webhook chegar primeiro
+const MERGE_FIELDS = ['campaign_id', 'sent_by', 'media_path', 'media_mime', 'media_name', 'media_size'];
+
 async function finalizeOutbound(row, externalId) {
   const { error } = await supabase
     .from('messages')
@@ -166,18 +170,19 @@ async function finalizeOutbound(row, externalId) {
     .eq('id', row.id);
 
   // 23505 = o webhook ja registrou essa mesma mensagem antes de terminarmos.
-  // Mantemos a do webhook, copiamos o vinculo da campanha e removemos a duplicada.
+  // Mantemos a do webhook, copiamos o que so nos sabemos e removemos a duplicada.
   if (error && error.code === '23505') {
     const { data: existing } = await supabase
       .from('messages')
-      .select('id')
+      .select('id,body')
       .eq('channel_id', row.channel_id)
       .eq('external_id', externalId)
       .maybeSingle();
     if (existing) {
-      if (row.campaign_id) {
-        await supabase.from('messages').update({ campaign_id: row.campaign_id }).eq('id', existing.id);
-      }
+      const patch = {};
+      for (const f of MERGE_FIELDS) if (row[f] != null) patch[f] = row[f];
+      if (row.body && !existing.body) patch.body = row.body;
+      if (Object.keys(patch).length) await supabase.from('messages').update(patch).eq('id', existing.id);
       await supabase.from('messages').delete().eq('id', row.id);
       return existing.id;
     }
@@ -209,6 +214,58 @@ export async function sendTextMessage({ channel, conversation, text, campaignId 
     const { externalId } = await evolution.sendText(channel.instance_name, conversation.external_chat_id, text);
     const messageId = externalId ? await finalizeOutbound(row, externalId) : row.id;
     await touchConversation(conversation.id, text, false);
+    return { id: messageId, external_id: externalId, status: 'sent' };
+  } catch (e) {
+    await supabase
+      .from('messages')
+      .update({ status: 'failed', error: String(e.message).slice(0, 500) })
+      .eq('id', row.id);
+    throw e;
+  }
+}
+
+// Envia imagem, video, audio ou documento: guarda no Storage, envia pela Evolution e registra.
+export async function sendMediaMessage({ channel, conversation, buffer, mime, fileName, caption = null, sentBy = null }) {
+  const kind = kindFromMime(mime);
+  const name = fileName || defaultName(kind, mime);
+  const path = mediaPath(channel.id, conversation.id, name);
+  await uploadMedia(path, buffer, mime);
+
+  const text = kind === 'audio' ? null : caption || null; // audio nao tem legenda
+  const { data: row, error } = await supabase
+    .from('messages')
+    .insert({
+      conversation_id: conversation.id,
+      channel_id: channel.id,
+      direction: 'out',
+      type: kind,
+      body: text,
+      status: 'queued',
+      media_path: path,
+      media_mime: mime,
+      media_name: name,
+      media_size: buffer.length,
+      ...(sentBy ? { sent_by: sentBy } : {}),
+    })
+    .select()
+    .single();
+  if (error) throw error;
+
+  try {
+    const base64 = buffer.toString('base64');
+    const target = conversation.external_chat_id;
+    const { externalId } =
+      kind === 'audio'
+        ? await evolution.sendAudio(channel.instance_name, target, { mimetype: mime, base64 })
+        : await evolution.sendMedia(channel.instance_name, target, {
+            mediatype: kind,
+            mimetype: mime,
+            fileName: name,
+            caption: text,
+            base64,
+          });
+    const messageId = externalId ? await finalizeOutbound(row, externalId) : row.id;
+    await touchConversation(conversation.id, previewFor(kind, text, name), false);
     return { id: messageId, external_id: externalId, status: 'sent' };
   } catch (e) {
     await supabase

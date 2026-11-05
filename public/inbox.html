@@ -86,6 +86,20 @@
   .composer textarea { flex: 1; resize: none; height: 44px; max-height: 140px; }
   .composer button { padding: 0 18px; }
   #chatEmpty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--muted); }
+  .composer #attach { padding: 0 12px; font-size: 18px; }
+  .pending { display: flex; align-items: center; gap: 10px; padding: 6px 14px; background: var(--panel); border-top: 1px solid var(--line); font-size: 13px; }
+  .pending img { height: 44px; border-radius: 6px; }
+  .pending span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bubble img.media, .bubble video.media { display: block; max-width: 100%; max-height: 320px; border-radius: 8px; cursor: zoom-in; }
+  .bubble video.media { cursor: default; }
+  .bubble img.sticker { max-height: 160px; cursor: default; }
+  .bubble audio { display: block; width: 260px; max-width: 100%; }
+  .mph { min-width: 190px; min-height: 80px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 8px; background: var(--hover); border-radius: 8px; color: var(--muted); font-size: 13px; }
+  .file { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); cursor: pointer; min-width: 190px; }
+  .file small { color: var(--muted); margin-left: auto; }
+  .bubble .cap { margin-top: 4px; }
+  #lightbox { position: fixed; inset: 0; background: #000d; display: flex; align-items: center; justify-content: center; z-index: 50; cursor: zoom-out; }
+  #lightbox img { max-width: 94vw; max-height: 94vh; }
 
   /* equipe */
   #team { flex: 1; overflow-y: auto; padding: 20px; max-width: 760px; width: 100%; margin: 0 auto; }
@@ -153,7 +167,14 @@
           <div class="ctl" id="chatCtl"></div>
         </div>
         <div id="msgs"></div>
+        <div class="pending" id="pending" hidden>
+          <img id="pendThumb" alt="" hidden>
+          <span id="pendName"></span>
+          <button id="pendX">Remover</button>
+        </div>
         <div class="composer">
+          <button id="attach" title="Anexar arquivo (ou cole uma imagem com Ctrl+V)">&#128206;</button>
+          <input id="file" type="file" hidden>
           <textarea id="text" placeholder="Digite a mensagem (Enter envia, Shift+Enter quebra linha)"></textarea>
           <button class="primary" id="send">Enviar</button>
         </div>
@@ -191,7 +212,7 @@ const S = {
   access: localStorage.getItem('finly_a'),
   refresh: localStorage.getItem('finly_r'),
   me: null, agents: [], filter: 'all', q: '', sel: null,
-  listReq: 0, unread: null, msgSig: '', headSig: '', timers: [], audio: null,
+  listReq: 0, unread: null, msgSig: '', headSig: '', timers: [], audio: null, pending: null,
 };
 
 // ---------- sessao ----------
@@ -207,6 +228,7 @@ function showLogin(msg) {
   document.title = 'Finly';
 }
 function logout(msg) {
+  clearBlobs();
   S.access = S.refresh = null;
   localStorage.removeItem('finly_a'); localStorage.removeItem('finly_r');
   showLogin(msg);
@@ -371,6 +393,7 @@ $('search').oninput = () => {
 // ---------- chat ----------
 function openConv(id) {
   S.sel = id; S.msgSig = ''; S.headSig = '';
+  setPending(null);
   $('inbox').classList.add('chat-open');
   $('chatEmpty').hidden = true; $('chatBox').hidden = false;
   loadChat(true);
@@ -431,6 +454,114 @@ async function act(path, body) {
   loadChat(false); loadList();
 }
 
+// ---------- midia ----------
+const MEDIA_KINDS = ['image', 'video', 'audio', 'document', 'sticker'];
+const MAX_UPLOAD = 20 * 1024 * 1024;
+const blobUrls = new Map(); // id -> blob URL pronto
+const blobJobs = new Map(); // id -> Promise em andamento
+
+function clearBlobs() {
+  for (const url of blobUrls.values()) URL.revokeObjectURL(url);
+  blobUrls.clear(); blobJobs.clear();
+}
+
+async function fetchBlob(id, retry = true) {
+  const res = await fetch('/api/media/' + id, { headers: { Authorization: 'Bearer ' + S.access } });
+  if (res.status === 401 && retry && (await doRefresh())) return fetchBlob(id, false);
+  if (!res.ok) throw new Error('erro ' + res.status);
+  return res.blob();
+}
+
+function getBlobUrl(id) {
+  if (blobUrls.has(id)) return Promise.resolve(blobUrls.get(id));
+  if (!blobJobs.has(id)) {
+    const job = fetchBlob(id).then((blob) => {
+      const url = URL.createObjectURL(blob);
+      blobUrls.set(id, url);
+      if (blobUrls.size > 150) { // descarta o mais antigo
+        const [oldId, oldUrl] = blobUrls.entries().next().value;
+        URL.revokeObjectURL(oldUrl); blobUrls.delete(oldId); blobJobs.delete(oldId);
+      }
+      return url;
+    });
+    blobJobs.set(id, job);
+    job.catch(() => blobJobs.delete(id));
+  }
+  return blobJobs.get(id);
+}
+
+// So baixa a midia quando ela aparece na tela
+const io = 'IntersectionObserver' in window
+  ? new IntersectionObserver((entries) => entries.forEach((e) => {
+      if (e.isIntersecting) { io.unobserve(e.target); if (e.target._load) e.target._load(); }
+    }), { root: $('msgs'), rootMargin: '300px' })
+  : null;
+function lazy(node, loader) { node._load = loader; if (io) io.observe(node); else loader(); }
+
+function fmtSize(n) {
+  if (!n) return '';
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(0) + ' KB';
+  return (n / 1048576).toFixed(1) + ' MB';
+}
+
+function openLightbox(url) {
+  const box = el('div'); box.id = 'lightbox';
+  const img = el('img'); img.src = url; img.alt = '';
+  box.append(img);
+  box.onclick = () => box.remove();
+  document.body.append(box);
+}
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { const l = $('lightbox'); if (l) l.remove(); } });
+
+function buildMedia(m, url) {
+  if (m.type === 'image' || m.type === 'sticker') {
+    const img = el('img', undefined, m.type === 'sticker' ? 'media sticker' : 'media');
+    img.alt = m.type === 'sticker' ? 'figurinha' : 'imagem'; img.src = url;
+    if (m.type === 'image') img.onclick = () => openLightbox(url);
+    return img;
+  }
+  const tag = el(m.type === 'video' ? 'video' : 'audio', undefined, m.type === 'video' ? 'media' : '');
+  tag.controls = true; tag.preload = 'metadata'; tag.src = url;
+  return tag;
+}
+
+function mediaNode(m) {
+  if (!MEDIA_KINDS.includes(m.type)) return null;
+  const wrap = el('div');
+
+  if (!m.has_media) {
+    if (m.body && m.body.startsWith('[arquivo grande')) return null;
+    const old = Date.now() - new Date(m.created_at).getTime() > 3 * 60 * 1000;
+    wrap.append(el('div', old ? '⚠ Midia indisponivel' : '⏳ Baixando midia...', 'mph'));
+    return wrap;
+  }
+
+  if (m.type === 'document') {
+    const chip = el('div', undefined, 'file');
+    chip.append(el('span', '📄'), el('span', m.media_name || 'arquivo'), el('small', fmtSize(m.media_size)));
+    chip.onclick = async () => {
+      try {
+        const url = await getBlobUrl(m.id);
+        const a = document.createElement('a');
+        a.href = url; a.download = m.media_name || 'arquivo';
+        document.body.append(a); a.click(); a.remove();
+      } catch (e) { alert('Erro ao baixar: ' + e.message); }
+    };
+    wrap.append(chip);
+    return wrap;
+  }
+
+  if (blobUrls.has(m.id)) { wrap.append(buildMedia(m, blobUrls.get(m.id))); return wrap; }
+  const ph = el('div', 'Carregando...', 'mph');
+  wrap.append(ph);
+  lazy(ph, async () => {
+    try { ph.replaceWith(buildMedia(m, await getBlobUrl(m.id))); }
+    catch (_) { ph.textContent = '⚠ Falha ao carregar'; }
+  });
+  return wrap;
+}
+
 function tick(m) {
   if (m.direction !== 'out') return null;
   const s = el('span');
@@ -443,7 +574,7 @@ function tick(m) {
 }
 
 function renderMsgs(msgs, forceScroll) {
-  const sig = msgs.length + '|' + msgs.map((m) => m.id + m.status).join(',');
+  const sig = msgs.length + '|' + msgs.map((m) => m.id + m.status + (m.has_media ? 'm' : '')).join(',');
   if (sig === S.msgSig) return;
   S.msgSig = sig;
 
@@ -456,7 +587,9 @@ function renderMsgs(msgs, forceScroll) {
     if (day !== lastDay) { box.append(el('div', fmtDay(m.created_at), 'day')); lastDay = day; }
     const b = el('div', undefined, 'bubble' + (m.direction === 'out' ? ' out' : ''));
     if (m.direction === 'out' && m.sender && m.sender.name) b.append(el('div', m.sender.name, 'who'));
-    b.append(document.createTextNode(m.body || ''));
+    const mn = mediaNode(m);
+    if (mn) b.append(mn);
+    if (m.body) b.append(mn ? el('div', m.body, 'cap') : document.createTextNode(m.body));
     const meta = el('div', fmtHour(m.created_at), 'm');
     const t = tick(m); if (t) meta.append(t);
     b.append(meta);
@@ -465,24 +598,74 @@ function renderMsgs(msgs, forceScroll) {
   if (forceScroll || near) box.scrollTop = box.scrollHeight;
 }
 
+async function uploadFile(convId, file, caption, retry = true) {
+  const res = await fetch(`/api/inbox/conversations/${convId}/media`, {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer ' + S.access,
+      'Content-Type': 'application/octet-stream', // o tipo real vai em X-File-Type
+      'X-File-Type': file.type || 'application/octet-stream',
+      'X-File-Name': encodeURIComponent(file.name || 'arquivo'),
+      'X-Caption': encodeURIComponent(caption || ''),
+    },
+    body: file,
+  });
+  if (res.status === 401 && retry && (await doRefresh())) return uploadFile(convId, file, caption, false);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'erro ' + res.status);
+  return data;
+}
+
+function setPending(file) {
+  if (file && file.size > MAX_UPLOAD) { alert('Arquivo muito grande (maximo 20 MB).'); return; }
+  S.pending = file || null;
+  $('pending').hidden = !file;
+  $('pendName').textContent = file ? `${file.name} (${fmtSize(file.size)})` : '';
+  const th = $('pendThumb');
+  if (th.getAttribute('src')) { URL.revokeObjectURL(th.getAttribute('src')); th.removeAttribute('src'); }
+  th.hidden = !(file && file.type.startsWith('image/'));
+  if (!th.hidden) th.src = URL.createObjectURL(file);
+}
+
 async function sendMsg() {
+  if (!S.sel) return;
   const text = $('text').value.trim();
-  if (!text || !S.sel) return;
-  $('send').disabled = true;
+  const file = S.pending;
+  if (!text && !file) return;
+  $('send').disabled = true; $('attach').disabled = true;
   try {
-    await post(`/api/inbox/conversations/${S.sel}/reply`, { text });
+    if (file) await uploadFile(S.sel, file, text);
+    else await post(`/api/inbox/conversations/${S.sel}/reply`, { text });
     $('text').value = '';
+    setPending(null);
     S.headSig = '';
     await loadChat(true);
     loadList();
   } catch (e) {
     alert('Erro ao enviar: ' + e.message);
   } finally {
-    $('send').disabled = false;
+    $('send').disabled = false; $('attach').disabled = false;
     $('text').focus();
   }
 }
 $('send').onclick = sendMsg;
+$('attach').onclick = () => $('file').click();
+$('file').onchange = (ev) => { const f = ev.target.files[0]; if (f) setPending(f); ev.target.value = ''; };
+$('pendX').onclick = () => setPending(null);
+$('text').onpaste = (ev) => {
+  const f = ev.clipboardData && ev.clipboardData.files && ev.clipboardData.files[0];
+  if (!f) return;
+  ev.preventDefault();
+  const generic = /^image\.\w+$/i.test(f.name || '');
+  setPending(generic || !f.name ? new File([f], 'imagem-' + Date.now() + '.' + (f.type.split('/')[1] || 'png'), { type: f.type }) : f);
+};
+$('chat').addEventListener('dragover', (ev) => { if (S.sel) ev.preventDefault(); });
+$('chat').addEventListener('drop', (ev) => {
+  if (!S.sel) return;
+  ev.preventDefault();
+  const f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+  if (f) setPending(f);
+});
 $('text').onkeydown = (ev) => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); sendMsg(); } };
 
 // ---------- equipe (admin) ----------

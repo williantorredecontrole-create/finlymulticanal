@@ -42,3 +42,11 @@ As rotas `/api` exigem o header `x-api-key` com o valor de FINLY_API_KEY.
 - Campanhas e contatos: somente administradores
 
 Rode `finly_migracao_03_inbox.sql` no Supabase antes do deploy.
+
+## Midia
+
+- Recebe imagem, video, audio, documento e figurinha: o webhook baixa o arquivo na Evolution e guarda no
+  Supabase Storage (pasta privada `media`). So atendentes logados conseguem abrir (`GET /api/media/:id`).
+- Envio pelo painel: botao de clipe, Ctrl+V (imagem) ou arrastar arquivo. Limite de 20 MB.
+  `POST /api/inbox/conversations/:id/media` (corpo = bytes; cabecalhos X-File-Type, X-File-Name, X-Caption).
+- Rode `finly_migracao_04_midia.sql` no Supabase antes do deploy.

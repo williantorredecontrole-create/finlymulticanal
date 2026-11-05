@@ -1,6 +1,7 @@
-import { Router } from 'express';
+import express, { Router } from 'express';
 import { supabase } from '../db.js';
-import { sendTextMessage } from '../services/messaging.js';
+import { sendMediaMessage, sendTextMessage } from '../services/messaging.js';
+import { MAX_BYTES, downloadMedia } from '../services/media.js';
 import { requireAdmin, createAgent, invalidateAgent } from '../services/auth.js';
 
 // Montado dentro de /api (ja autenticado: req.agent existe).
@@ -83,13 +84,16 @@ router.get('/inbox/conversations/:id', async (req, res) => {
 
     const { data, error } = await supabase
       .from('messages')
-      .select('id,direction,type,body,status,error,created_at,sender:agents(name)')
+      .select(
+        'id,direction,type,body,status,error,created_at,media_path,media_mime,media_name,media_size,sender:agents(name)'
+      )
       .eq('conversation_id', conversation.id)
       .order('created_at', { ascending: false })
       .limit(200);
     if (error) throw error;
 
-    res.json({ conversation, messages: data.reverse() });
+    const messages = data.reverse().map(({ media_path, ...m }) => ({ ...m, has_media: !!media_path }));
+    res.json({ conversation, messages });
   } catch (e) {
     fail(res, e);
   }
@@ -133,6 +137,93 @@ router.post('/inbox/conversations/:id/reply', async (req, res) => {
       await supabase.from('conversations').update({ assigned_to: req.agent.id }).eq('id', conversation.id);
     }
     res.json({ ok: true, message });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+// ---------- midia ----------
+
+const decode = (v) => {
+  try {
+    return decodeURIComponent(String(v || ''));
+  } catch {
+    return String(v || '');
+  }
+};
+
+// Envio de arquivo: corpo = bytes do arquivo. Dados vao em cabecalhos:
+// X-File-Type (tipo real), X-File-Name e X-Caption (codificados com encodeURIComponent).
+const rawBody = express.raw({ type: () => true, limit: MAX_BYTES + 1024 });
+
+router.post('/inbox/conversations/:id/media', rawBody, async (req, res) => {
+  try {
+    const buffer = req.body;
+    if (!Buffer.isBuffer(buffer) || !buffer.length) return bad(res, 'arquivo vazio');
+    if (buffer.length > MAX_BYTES) return res.status(413).json({ error: 'arquivo muito grande (maximo 20 MB)' });
+
+    const mime =
+      decode(req.get('x-file-type')).split(';')[0].trim().toLowerCase() || 'application/octet-stream';
+    const fileName = decode(req.get('x-file-name')).trim().slice(0, 120) || null;
+    const caption = decode(req.get('x-caption')).trim().slice(0, 1000) || null;
+
+    const { data: conversation, error } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!conversation) return res.status(404).json({ error: 'conversa nao encontrada' });
+
+    const { data: channel, error: e2 } = await supabase
+      .from('channels')
+      .select('*')
+      .eq('id', conversation.channel_id)
+      .single();
+    if (e2) throw e2;
+
+    const message = await sendMediaMessage({
+      channel,
+      conversation,
+      buffer,
+      mime,
+      fileName,
+      caption,
+      sentBy: req.agent.id,
+    });
+
+    if (!conversation.assigned_to && req.agent.id) {
+      await supabase.from('conversations').update({ assigned_to: req.agent.id }).eq('id', conversation.id);
+    }
+    res.json({ ok: true, message });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+// Entrega o arquivo ao atendente logado. Tipos que o navegador executa viram download.
+const INLINE_OK = /^(image\/(jpeg|png|gif|webp)|audio\/[\w.+-]+|video\/[\w.+-]+|application\/pdf)$/;
+
+router.get('/media/:id', async (req, res) => {
+  try {
+    const { data: m, error } = await supabase
+      .from('messages')
+      .select('media_path,media_mime,media_name')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!m?.media_path) return res.status(404).json({ error: 'midia nao encontrada' });
+
+    const buffer = await downloadMedia(m.media_path);
+    const mime = m.media_mime || 'application/octet-stream';
+    const inline = INLINE_OK.test(mime);
+    res.set({
+      'Content-Type': inline ? mime : 'application/octet-stream',
+      'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(m.media_name || 'arquivo')}`,
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'private, max-age=86400',
+    });
+    res.send(buffer);
   } catch (e) {
     fail(res, e);
   }

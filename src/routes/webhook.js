@@ -9,6 +9,7 @@ import {
   sendTextMessage,
   updateMessageStatus,
 } from '../services/messaging.js';
+import { MAX_INBOUND_BYTES, MEDIA_TYPES, fetchInboundMedia, previewFor } from '../services/media.js';
 
 const router = Router();
 
@@ -22,18 +23,40 @@ const STATUS_MAP = {
 
 const IGNORED_TYPES = ['protocolMessage', 'reactionMessage', 'senderKeyDistributionMessage'];
 
-function extractText(m = {}) {
+// Mensagens "embrulhadas" (temporarias, visualizacao unica, documento com legenda)
+const WRAPPERS = [
+  'ephemeralMessage',
+  'viewOnceMessage',
+  'viewOnceMessageV2',
+  'viewOnceMessageV2Extension',
+  'documentWithCaptionMessage',
+];
+
+function unwrap(message) {
+  let cur = message;
+  for (let i = 0; i < 4 && cur; i++) {
+    const w = WRAPPERS.find((k) => cur[k]?.message);
+    if (!w) break;
+    cur = cur[w].message;
+  }
+  return cur || {};
+}
+
+function extractText(msg = {}) {
   return (
-    m.conversation ||
-    m.extendedTextMessage?.text ||
-    m.imageMessage?.caption ||
-    m.videoMessage?.caption ||
-    m.documentMessage?.caption ||
-    m.buttonsResponseMessage?.selectedDisplayText ||
-    m.listResponseMessage?.title ||
+    msg.conversation ||
+    msg.extendedTextMessage?.text ||
+    msg.imageMessage?.caption ||
+    msg.videoMessage?.caption ||
+    msg.documentMessage?.caption ||
+    msg.buttonsResponseMessage?.selectedDisplayText ||
+    msg.listResponseMessage?.title ||
+    msg.templateButtonReplyMessage?.selectedDisplayText ||
     null
   );
 }
+
+const sizeOf = (node) => Number(node?.fileLength?.low ?? node?.fileLength) || 0;
 
 async function handleUpsert(channel, m) {
   const key = m?.key;
@@ -45,6 +68,13 @@ async function handleUpsert(channel, m) {
   const messageType = m.messageType || '';
   if (IGNORED_TYPES.includes(messageType)) return;
 
+  const msg = unwrap(m.message);
+  const mediaKey = Object.keys(MEDIA_TYPES).find((k) => msg[k]);
+  const caption = extractText(msg);
+
+  // Mensagem sem conteudo util (so metadados): ignora
+  if (!mediaKey && !caption && Object.keys(msg).every((k) => k === 'messageContextInfo')) return;
+
   // Telefone real (quando o WhatsApp manda o identificador "lid", usa o alternativo se existir)
   const phoneJid = [jid, key.remoteJidAlt].find((j) => j && j.endsWith('@s.whatsapp.net'));
   const phone = phoneJid ? phoneJid.split('@')[0].replace(/\D/g, '') : null;
@@ -53,9 +83,25 @@ async function handleUpsert(channel, m) {
   const contact = await getOrCreateContact({ phone, name: fromMe ? null : m.pushName });
   const conversation = await getOrCreateConversation(channel.id, jid, contact?.id || null);
 
-  const text = extractText(m.message);
-  const type = text ? 'text' : messageType.replace('Message', '') || 'other';
-  const body = text || `[${type}]`;
+  let type;
+  let body;
+  let preview;
+  let tooBig = false;
+  if (mediaKey) {
+    const node = msg[mediaKey];
+    type = MEDIA_TYPES[mediaKey].type;
+    tooBig = sizeOf(node) > MAX_INBOUND_BYTES;
+    body = caption || (tooBig ? '[arquivo grande demais para exibir aqui]' : null);
+    preview = previewFor(type, caption, node.fileName);
+  } else if (caption) {
+    type = 'text';
+    body = caption;
+    preview = caption;
+  } else {
+    type = messageType.replace('Message', '') || 'outro';
+    body = `[${type}]`;
+    preview = body;
+  }
 
   const raw = Number(m.messageTimestamp?.low ?? m.messageTimestamp);
   const timestamp = Number.isFinite(raw) && raw > 0 ? new Date(raw * 1000) : new Date();
@@ -66,12 +112,29 @@ async function handleUpsert(channel, m) {
     direction: fromMe ? 'out' : 'in',
     type,
     body,
+    preview,
     externalId: key.id,
     timestamp,
   });
+  if (!saved) return; // ja existia
+
+  // Baixa a midia em segundo plano. Se fomos nos que enviamos pelo painel, espera um pouco
+  // para a mensagem do painel assumir o registro antes de baixar de novo.
+  if (mediaKey && !tooBig) {
+    setTimeout(() => {
+      fetchInboundMedia({
+        channel,
+        messageId: saved.id,
+        conversationId: conversation.id,
+        type,
+        key,
+        rawMessage: m.message,
+      }).catch((e) => console.error('Midia nao baixada:', e.message));
+    }, fromMe ? 8000 : 0);
+  }
 
   // Descadastro automatico: o contato responde SAIR / PARAR
-  if (saved && !fromMe && contact && text && isOptOut(text)) {
+  if (!mediaKey && !fromMe && contact && caption && isOptOut(caption)) {
     await supabase.from('contacts').update({ opted_out: true }).eq('id', contact.id);
     try {
       await sendTextMessage({
