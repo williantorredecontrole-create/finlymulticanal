@@ -1,6 +1,7 @@
-import { Router } from 'express';
+import express, { Router } from 'express';
 import { supabase } from '../db.js';
 import { normalizePhone } from '../services/messaging.js';
+import { MAX_BYTES, defaultName, kindFromMime, mediaPath, uploadMedia } from '../services/media.js';
 
 // Estas rotas sao montadas dentro de /api (ja protegidas pela x-api-key).
 const router = Router();
@@ -229,6 +230,72 @@ router.get('/campaigns/:id/recipients', async (req, res) => {
     const { data, error } = await q;
     if (error) throw error;
     res.json(data);
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+// ---------- anexo da campanha (imagem, video ou documento) ----------
+
+const decodeH = (v) => {
+  try {
+    return decodeURIComponent(String(v || ''));
+  } catch {
+    return String(v || '');
+  }
+};
+const rawBody = express.raw({ type: () => true, limit: MAX_BYTES + 1024 });
+
+// Corpo = bytes do arquivo. Cabecalhos: X-File-Type (tipo real) e X-File-Name (encodeURIComponent).
+// ATENCAO: estas rotas ficam ANTES de "/campaigns/:id/:action" para nao serem confundidas com ela.
+router.post('/campaigns/:id/media', rawBody, async (req, res) => {
+  try {
+    const { data: c, error } = await supabase
+      .from('campaigns')
+      .select('id,status,channel_id')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!c) return res.status(404).json({ error: 'campanha nao encontrada' });
+    if (!['draft', 'paused'].includes(c.status)) {
+      return bad(res, 'so e possivel trocar o anexo de uma campanha em rascunho ou pausada');
+    }
+
+    const buffer = req.body;
+    if (!Buffer.isBuffer(buffer) || !buffer.length) return bad(res, 'arquivo vazio');
+    if (buffer.length > MAX_BYTES) return res.status(413).json({ error: 'arquivo muito grande (maximo 20 MB)' });
+
+    const mime = decodeH(req.get('x-file-type')).split(';')[0].trim().toLowerCase() || 'application/octet-stream';
+    const kind = kindFromMime(mime);
+    if (kind === 'audio') return bad(res, 'audio nao pode ser anexado a uma campanha. Use imagem, video ou PDF.');
+
+    const name = decodeH(req.get('x-file-name')).trim().slice(0, 120) || defaultName(kind, mime);
+    const path = mediaPath(c.channel_id, `campanha-${c.id}`, name);
+    await uploadMedia(path, buffer, mime);
+
+    const { error: e2 } = await supabase
+      .from('campaigns')
+      .update({ media_path: path, media_mime: mime, media_name: name, media_size: buffer.length, note: null })
+      .eq('id', c.id);
+    if (e2) throw e2;
+    res.json({ ok: true, media: { name, mime, size: buffer.length, kind } });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+router.post('/campaigns/:id/media/remove', async (req, res) => {
+  try {
+    const { data: c, error } = await supabase.from('campaigns').select('id,status').eq('id', req.params.id).maybeSingle();
+    if (error) throw error;
+    if (!c) return res.status(404).json({ error: 'campanha nao encontrada' });
+    if (!['draft', 'paused'].includes(c.status)) return bad(res, 'so e possivel remover o anexo de uma campanha em rascunho ou pausada');
+    const { error: e2 } = await supabase
+      .from('campaigns')
+      .update({ media_path: null, media_mime: null, media_name: null, media_size: null })
+      .eq('id', c.id);
+    if (e2) throw e2;
+    res.json({ ok: true });
   } catch (e) {
     fail(res, e);
   }

@@ -1,5 +1,6 @@
 import { supabase } from '../db.js';
-import { getOrCreateConversation, sendTextMessage } from './messaging.js';
+import { getOrCreateConversation, sendMediaMessage, sendTextMessage } from './messaging.js';
+import { downloadMedia } from './media.js';
 
 // Motor de disparos. Roda dentro do proprio servidor: a cada 3 segundos olha as
 // campanhas "running" e envia no maximo 1 mensagem por campanha, respeitando:
@@ -11,6 +12,7 @@ import { getOrCreateConversation, sendTextMessage } from './messaging.js';
 const TZ = 'America/Sao_Paulo';
 const nextAt = new Map(); // campanha -> proximo envio permitido (ms)
 const failStreak = new Map(); // campanha -> falhas seguidas
+const mediaCache = new Map(); // campanha -> { path, buffer } (baixa o anexo uma vez so)
 let busy = false;
 
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -57,11 +59,31 @@ async function markRecipient(id, status, error = null) {
   await supabase.from('campaign_recipients').update({ status, error }).eq('id', id);
 }
 
-async function sendOne(c, channel, recipient, contact) {
+async function campaignMedia(c) {
+  const hit = mediaCache.get(c.id);
+  if (hit && hit.path === c.media_path) return hit;
+  const entry = { path: c.media_path, buffer: await downloadMedia(c.media_path) };
+  mediaCache.set(c.id, entry);
+  return entry;
+}
+
+async function sendOne(c, channel, recipient, contact, media) {
   const text = renderMessage(c.message_body, contact);
   try {
     const conversation = await getOrCreateConversation(channel.id, `${contact.phone}@s.whatsapp.net`, contact.id);
-    const msg = await sendTextMessage({ channel, conversation, text, campaignId: c.id });
+    // Com anexo, o texto vira a legenda do arquivo
+    const msg = media
+      ? await sendMediaMessage({
+          channel,
+          conversation,
+          buffer: media.buffer,
+          mime: c.media_mime,
+          fileName: c.media_name,
+          caption: text,
+          campaignId: c.id,
+          existingPath: c.media_path,
+        })
+      : await sendTextMessage({ channel, conversation, text, campaignId: c.id });
 
     // Se a entrega/leitura ja chegou pelo webhook, aproveita o status mais avancado
     const { data: m } = await supabase.from('messages').select('status').eq('id', msg.id).maybeSingle();
@@ -111,6 +133,19 @@ async function processCampaign(c) {
     return;
   }
 
+  let media = null;
+  if (c.media_path) {
+    try {
+      media = await campaignMedia(c);
+    } catch (e) {
+      await supabase
+        .from('campaigns')
+        .update({ status: 'paused', note: 'Nao foi possivel carregar o arquivo anexo: ' + e.message })
+        .eq('id', c.id);
+      return;
+    }
+  }
+
   // Contatos ignorados (sem opt-in, descadastrados, sem telefone) nao geram espera
   for (let i = 0; i < 50; i++) {
     const r = await nextRecipient(c.id);
@@ -132,7 +167,7 @@ async function processCampaign(c) {
       await markRecipient(r.id, 'skipped', 'sem opt-in');
       continue;
     }
-    await sendOne(c, channel, r, contact);
+    await sendOne(c, channel, r, contact, media);
     return;
   }
 }
@@ -151,6 +186,9 @@ export function startCampaignWorker() {
           console.error(`Campanha ${c.id}:`, e.message);
         }
       }
+      // Libera da memoria o anexo de campanhas que nao estao mais rodando
+      const ids = new Set((running || []).map((c) => c.id));
+      for (const id of mediaCache.keys()) if (!ids.has(id)) mediaCache.delete(id);
     } catch (e) {
       console.error('Worker de campanhas:', e.message);
     } finally {

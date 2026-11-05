@@ -225,11 +225,21 @@ export async function sendTextMessage({ channel, conversation, text, campaignId 
 }
 
 // Envia imagem, video, audio ou documento: guarda no Storage, envia pela Evolution e registra.
-export async function sendMediaMessage({ channel, conversation, buffer, mime, fileName, caption = null, sentBy = null }) {
+export async function sendMediaMessage({
+  channel,
+  conversation,
+  buffer,
+  mime,
+  fileName,
+  caption = null,
+  sentBy = null,
+  campaignId = null,
+  existingPath = null, // campanhas: o arquivo ja esta no Storage, nao guarda uma copia por contato
+}) {
   const kind = kindFromMime(mime);
   const name = fileName || defaultName(kind, mime);
-  const path = mediaPath(channel.id, conversation.id, name);
-  await uploadMedia(path, buffer, mime);
+  const path = existingPath || mediaPath(channel.id, conversation.id, name);
+  if (!existingPath) await uploadMedia(path, buffer, mime);
 
   const text = kind === 'audio' ? null : caption || null; // audio nao tem legenda
   const { data: row, error } = await supabase
@@ -245,6 +255,7 @@ export async function sendMediaMessage({ channel, conversation, buffer, mime, fi
       media_mime: mime,
       media_name: name,
       media_size: buffer.length,
+      ...(campaignId ? { campaign_id: campaignId } : {}),
       ...(sentBy ? { sent_by: sentBy } : {}),
     })
     .select()

@@ -59,6 +59,10 @@
     <textarea id="cMsg" rows="5" placeholder="{Ola|Oi|Bom dia} {nome}, tudo bem? ..."></textarea>
   </label>
   <p class="hint">Use {nome} para o primeiro nome. Use {Ola|Oi|Bom dia} para variar o texto (um e sorteado a cada envio).</p>
+  <label>Anexo (opcional): imagem, video ou PDF, ate 20 MB
+    <input id="cFile" type="file" accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx">
+  </label>
+  <p class="hint">Com anexo, o texto da mensagem vira a legenda do arquivo. Use esperas maiores (20 a 60 s).</p>
   <div class="row">
     <label>Espera minima (s) <input id="cMin" type="number" value="15" min="3"></label>
     <label>maxima (s) <input id="cMax" type="number" value="45" min="3"></label>
@@ -155,6 +159,39 @@ $('btnImport').onclick = async () => {
 };
 
 // ---------- campanhas ----------
+const MAX_UPLOAD = 20 * 1024 * 1024;
+
+function fmtSize(n) {
+  if (!n) return '';
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(0) + ' KB';
+  return (n / 1048576).toFixed(1) + ' MB';
+}
+
+async function uploadCampaignMedia(id, file) {
+  if (file.size > MAX_UPLOAD) throw new Error('arquivo acima de 20 MB');
+  const res = await fetch('/api/campaigns/' + id + '/media', {
+    method: 'POST',
+    headers: {
+      'x-api-key': keyInput.value.trim(),
+      'Content-Type': 'application/octet-stream', // o tipo real vai em X-File-Type
+      'X-File-Type': file.type || 'application/octet-stream',
+      'X-File-Name': encodeURIComponent(file.name),
+    },
+    body: file,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'erro ' + res.status);
+  return data;
+}
+
+// Com anexo, sugere esperas maiores
+$('cFile').onchange = () => {
+  if (!$('cFile').files[0]) return;
+  if (Number($('cMin').value) < 20) $('cMin').value = 20;
+  if (Number($('cMax').value) < 60) $('cMax').value = 60;
+};
+
 $('btnCreate').onclick = async () => {
   say($('cOut'), 'Criando...', true);
   try {
@@ -171,7 +208,18 @@ $('btnCreate').onclick = async () => {
         tag: $('cTag').value,
       }),
     });
-    say($('cOut'), `Campanha criada com ${r.recipients} destinatarios. Clique em Iniciar abaixo.`, true);
+    const file = $('cFile').files[0];
+    if (file) {
+      try {
+        await uploadCampaignMedia(r.campaign.id, file);
+        $('cFile').value = '';
+      } catch (e) {
+        say($('cOut'), `Campanha criada com ${r.recipients} destinatarios, mas o anexo falhou: ${e.message}. Use "Anexar arquivo" no cartao abaixo.`, false);
+        loadCamps();
+        return;
+      }
+    }
+    say($('cOut'), `Campanha criada com ${r.recipients} destinatarios${file ? ' e o anexo ' + file.name : ''}. Clique em Iniciar abaixo.`, true);
     loadCamps();
   } catch (e) {
     say($('cOut'), 'Erro: ' + e.message, false);
@@ -225,6 +273,8 @@ function renderCamp(c) {
   box.append(el('small',
     `Espera ${c.min_delay_s}-${c.max_delay_s}s | ate ${c.daily_limit}/dia | ${c.window_start}h as ${c.window_end}h`));
 
+  if (c.media_name) box.append(el('div', `📎 ${c.media_name} (${fmtSize(c.media_size)})`, 'hint'));
+
   const bar = el('div', undefined, 'bar');
   const fill = el('div');
   fill.style.width = done + '%';
@@ -246,6 +296,21 @@ function renderCamp(c) {
   if (c.status === 'running') add('Pausar', () => act(c, 'pause'));
   if (['draft', 'running', 'paused'].includes(c.status))
     add('Cancelar', () => act(c, 'cancel', 'Cancelar esta campanha? Nao da para retomar.'));
+  if (c.status === 'draft' || c.status === 'paused') {
+    add(c.media_name ? 'Trocar arquivo' : 'Anexar arquivo', () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx';
+      input.onchange = async () => {
+        const f = input.files[0];
+        if (!f) return;
+        try { await uploadCampaignMedia(c.id, f); } catch (e) { alert('Erro: ' + e.message); }
+        loadCamps();
+      };
+      input.click();
+    });
+    if (c.media_name) add('Remover arquivo', () => act(c, 'media/remove', 'Remover o arquivo anexado desta campanha?'));
+  }
   add('Ver falhas e ignorados', () => toggleRecipients(c, details));
   box.append(btns, details);
   return box;

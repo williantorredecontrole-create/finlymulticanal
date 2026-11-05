@@ -50,3 +50,11 @@ Rode `finly_migracao_03_inbox.sql` no Supabase antes do deploy.
 - Envio pelo painel: botao de clipe, Ctrl+V (imagem) ou arrastar arquivo. Limite de 20 MB.
   `POST /api/inbox/conversations/:id/media` (corpo = bytes; cabecalhos X-File-Type, X-File-Name, X-Caption).
 - Rode `finly_migracao_04_midia.sql` no Supabase antes do deploy.
+
+## Campanha com anexo
+
+- Cada campanha pode ter 1 arquivo (imagem, video ou documento, ate 20 MB; audio nao). O texto vira a legenda.
+- `POST /api/campaigns/:id/media` (corpo = bytes; cabecalhos X-File-Type, X-File-Name) e
+  `POST /api/campaigns/:id/media/remove`. So em campanha em rascunho ou pausada.
+- O arquivo e guardado uma vez; cada contato recebe a mesma midia. Rode `finly_migracao_05_campanha_midia.sql`
+  (depois da 04) antes do deploy.
