@@ -188,7 +188,7 @@ async function finalizeOutbound(row, externalId) {
 }
 
 // Envia texto e registra no banco. Reaproveitado depois pelos disparos.
-export async function sendTextMessage({ channel, conversation, text, campaignId = null }) {
+export async function sendTextMessage({ channel, conversation, text, campaignId = null, sentBy = null }) {
   const { data: row, error } = await supabase
     .from('messages')
     .insert({
@@ -199,6 +199,7 @@ export async function sendTextMessage({ channel, conversation, text, campaignId 
       body: text,
       status: 'queued',
       campaign_id: campaignId,
+      ...(sentBy ? { sent_by: sentBy } : {}), // atendente que enviou (so quando houver)
     })
     .select()
     .single();

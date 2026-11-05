@@ -13,6 +13,8 @@ Recebe mensagens da Evolution API (webhook), salva no Supabase e envia mensagens
 | EVOLUTION_INSTANCE | Nome da instancia (teste) |
 | FINLY_API_KEY | Senha longa inventada por voce (protege a API) |
 | WEBHOOK_SECRET | Outra senha longa inventada (protege o webhook) |
+| ADMIN_EMAIL / ADMIN_PASSWORD / ADMIN_NAME | Cria o primeiro administrador do inbox (apague a senha depois) |
+| ADMIN_RESET | `true` junto com ADMIN_PASSWORD redefine a senha do admin no proximo deploy |
 
 ## Rotas
 
@@ -24,3 +26,19 @@ Recebe mensagens da Evolution API (webhook), salva no Supabase e envia mensagens
 - `POST /api/conversations/:id/reply` com `{ "text": "Ola" }`
 
 As rotas `/api` exigem o header `x-api-key` com o valor de FINLY_API_KEY.
+
+## Telas
+
+- `/inbox` atendimento com login (conversas, chat, atribuicao, equipe)
+- `/campanhas` contatos e disparos (usa a FINLY_API_KEY)
+- `/teste` painel tecnico de teste
+
+## Inbox / login
+
+- `POST /auth/login`, `POST /auth/refresh`
+- `GET /api/inbox/conversations?filter=all|mine|unassigned|unread|closed&q=`
+- `GET /api/inbox/conversations/:id`, `POST .../reply`, `.../assign`, `.../status`, `.../read`
+- `GET/POST /api/agents`, `POST /api/agents/:id/update` (somente admin)
+- Campanhas e contatos: somente administradores
+
+Rode `finly_migracao_03_inbox.sql` no Supabase antes do deploy.

@@ -7,16 +7,13 @@ import {
   sendTextMessage,
 } from '../services/messaging.js';
 import campaignsRouter from './campaigns.js';
+import inboxRouter from './inbox.js';
+import { authenticate, requireAdmin } from '../services/auth.js';
 
 const router = Router();
 
-// Protecao: toda chamada precisa do header x-api-key igual a FINLY_API_KEY
-router.use((req, res, next) => {
-  if (!process.env.FINLY_API_KEY || req.get('x-api-key') !== process.env.FINLY_API_KEY) {
-    return res.status(401).json({ error: 'nao autorizado' });
-  }
-  next();
-});
+// Protecao: login do atendente (Bearer token) OU header x-api-key (FINLY_API_KEY)
+router.use(authenticate);
 
 async function pickChannel(channelId) {
   let q = supabase.from('channels').select('*').eq('driver', 'evolution_baileys');
@@ -101,6 +98,8 @@ router.post('/conversations/:id/reply', async (req, res) => {
   }
 });
 
-router.use(campaignsRouter);
+router.use(inboxRouter);
+// Contatos e campanhas: somente administradores
+router.use(requireAdmin, campaignsRouter);
 
 export default router;
