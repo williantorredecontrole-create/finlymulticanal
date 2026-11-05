@@ -217,3 +217,18 @@ export async function sendTextMessage({ channel, conversation, text, campaignId 
     throw e;
   }
 }
+
+// ---------- descadastro ----------
+
+const OPT_OUT_WORDS = ['sair', 'parar', 'stop', 'cancelar', 'descadastrar', 'remover', 'nao quero receber'];
+
+// True se a mensagem inteira for um pedido de saida (ex: "SAIR", "Parar!", "não quero receber")
+export function isOptOut(text) {
+  const t = String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z ]/g, '')
+    .trim();
+  return OPT_OUT_WORDS.includes(t);
+}

@@ -6,6 +6,7 @@ import {
   getOrCreateConversation,
   sendTextMessage,
 } from '../services/messaging.js';
+import campaignsRouter from './campaigns.js';
 
 const router = Router();
 
@@ -99,5 +100,7 @@ router.post('/conversations/:id/reply', async (req, res) => {
     fail(res, e);
   }
 });
+
+router.use(campaignsRouter);
 
 export default router;

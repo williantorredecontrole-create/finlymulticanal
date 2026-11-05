@@ -4,7 +4,9 @@ import {
   getChannelByInstance,
   getOrCreateContact,
   getOrCreateConversation,
+  isOptOut,
   saveMessage,
+  sendTextMessage,
   updateMessageStatus,
 } from '../services/messaging.js';
 
@@ -58,7 +60,7 @@ async function handleUpsert(channel, m) {
   const raw = Number(m.messageTimestamp?.low ?? m.messageTimestamp);
   const timestamp = Number.isFinite(raw) && raw > 0 ? new Date(raw * 1000) : new Date();
 
-  await saveMessage({
+  const saved = await saveMessage({
     channel,
     conversation,
     direction: fromMe ? 'out' : 'in',
@@ -67,6 +69,20 @@ async function handleUpsert(channel, m) {
     externalId: key.id,
     timestamp,
   });
+
+  // Descadastro automatico: o contato responde SAIR / PARAR
+  if (saved && !fromMe && contact && text && isOptOut(text)) {
+    await supabase.from('contacts').update({ opted_out: true }).eq('id', contact.id);
+    try {
+      await sendTextMessage({
+        channel,
+        conversation,
+        text: 'Pronto! Você não receberá mais mensagens nossas.',
+      });
+    } catch (e) {
+      console.error('Falha ao confirmar descadastro:', e.message);
+    }
+  }
 }
 
 async function handleEvent(payload) {

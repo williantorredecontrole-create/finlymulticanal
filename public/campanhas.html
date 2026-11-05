@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Finly - campanhas</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, sans-serif; max-width: 820px; margin: 24px auto; padding: 0 16px 60px; }
+  input, textarea, button, select { font: inherit; padding: 8px; margin: 4px 0; box-sizing: border-box; }
+  input[type=text], input[type=password], textarea { width: 100%; }
+  input[type=number] { width: 90px; }
+  button { cursor: pointer; }
+  fieldset { border: 1px solid #8886; border-radius: 8px; margin: 16px 0; padding: 12px 16px; }
+  legend { font-weight: 600; padding: 0 6px; }
+  small, .hint { opacity: .7; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .camp { border: 1px solid #8886; border-radius: 8px; padding: 12px; margin: 10px 0; }
+  .camp h4 { margin: 0 0 4px; }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: #8883; margin-left: 6px; }
+  .running { background: #2a9d8f55; } .paused { background: #e9c46a66; } .canceled { background: #e76f5155; }
+  .stats { display: flex; flex-wrap: wrap; gap: 14px; margin: 8px 0; }
+  .stats b { display: block; font-size: 18px; }
+  .bar { height: 8px; background: #8883; border-radius: 4px; overflow: hidden; }
+  .bar > div { height: 100%; background: #2a9d8f; }
+  .note { color: #c0392b; margin: 6px 0; }
+  .rec { font-size: 13px; padding: 2px 0; border-bottom: 1px solid #8883; }
+  .ok { color: #2a9d8f; } .err { color: #c0392b; }
+</style>
+</head>
+<body>
+<h2>Finly - campanhas</h2>
+<p><a href="/teste/">Conversas e envio individual</a></p>
+
+<label>Chave do Finly (FINLY_API_KEY)
+  <input id="key" type="password" autocomplete="off">
+</label>
+
+<fieldset>
+  <legend>1. Contatos</legend>
+  <p id="summary" class="hint">Digite a chave para carregar.</p>
+  <label>Cole um contato por linha (nome;telefone), ou carregue um arquivo CSV:
+    <textarea id="paste" rows="5" placeholder="Maria Silva;62999999999&#10;Joao;(61) 98888-7777"></textarea>
+  </label>
+  <input id="file" type="file" accept=".csv,.txt,text/csv,text/plain">
+  <div class="row">
+    <label>Etiqueta (opcional): <input id="impTag" type="text" style="width:180px" placeholder="ex: teste"></label>
+  </div>
+  <label><input id="impOpt" type="checkbox"> Confirmo que estes contatos autorizaram receber mensagens (opt-in)</label><br>
+  <button id="btnImport">Importar contatos</button>
+  <span id="impOut"></span>
+  <p class="hint">Contatos sem opt-in ficam salvos, mas nunca recebem disparos. Quem responder SAIR ou PARAR e removido automaticamente.</p>
+</fieldset>
+
+<fieldset>
+  <legend>2. Nova campanha</legend>
+  <label>Nome <input id="cName" type="text" placeholder="Ex: Aviso de novembro"></label>
+  <label>Mensagem
+    <textarea id="cMsg" rows="5" placeholder="{Ola|Oi|Bom dia} {nome}, tudo bem? ..."></textarea>
+  </label>
+  <p class="hint">Use {nome} para o primeiro nome. Use {Ola|Oi|Bom dia} para variar o texto (um e sorteado a cada envio).</p>
+  <div class="row">
+    <label>Espera minima (s) <input id="cMin" type="number" value="15" min="3"></label>
+    <label>maxima (s) <input id="cMax" type="number" value="45" min="3"></label>
+    <label>Limite por dia <input id="cDaily" type="number" value="150" min="1"></label>
+  </div>
+  <div class="row">
+    <label>Enviar entre <input id="cWs" type="number" value="8" min="0" max="23"> h</label>
+    <label>e <input id="cWe" type="number" value="20" min="1" max="24"> h (horario de Brasilia)</label>
+  </div>
+  <label>So para a etiqueta (opcional) <input id="cTag" type="text" style="width:180px" placeholder="ex: teste"></label><br>
+  <button id="btnCreate">Criar campanha (rascunho)</button>
+  <span id="cOut"></span>
+  <p class="hint">Teste primeiro: importe so o seu numero com a etiqueta "teste" e crie uma campanha para essa etiqueta.</p>
+</fieldset>
+
+<fieldset>
+  <legend>3. Campanhas</legend>
+  <button id="btnReload">Atualizar</button>
+  <div id="camps"></div>
+</fieldset>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const keyInput = $('key');
+keyInput.value = sessionStorage.getItem('finlyKey') || '';
+
+async function api(path, options = {}) {
+  const res = await fetch('/api' + path, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', 'x-api-key': keyInput.value.trim() },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'erro ' + res.status);
+  return data;
+}
+
+function el(tag, text, cls) {
+  const e = document.createElement(tag);
+  if (text !== undefined) e.textContent = text;
+  if (cls) e.className = cls;
+  return e;
+}
+
+function say(node, text, ok) {
+  node.textContent = text;
+  node.className = ok ? 'ok' : 'err';
+}
+
+// ---------- contatos ----------
+function parseContacts(text) {
+  const out = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const delim = line.includes(';') ? ';' : line.includes('\t') ? '\t' : ',';
+    const cols = line.split(delim).map((c) => c.replace(/^"|"$/g, '').trim());
+    const pi = cols.findIndex((c) => c.replace(/\D/g, '').length >= 8);
+    if (pi === -1) continue; // cabecalho ou linha sem telefone
+    const name = cols.find((c, i) => i !== pi && c && !/^[\d\s()+-]+$/.test(c)) || '';
+    out.push({ name, phone: cols[pi] });
+  }
+  return out;
+}
+
+$('file').onchange = async (ev) => {
+  const f = ev.target.files[0];
+  if (f) $('paste').value = await f.text();
+};
+
+async function loadSummary() {
+  try {
+    const s = await api('/contacts/summary');
+    $('summary').textContent = `Contatos: ${s.total} | com opt-in: ${s.opt_in} | descadastrados: ${s.opted_out}`;
+  } catch (e) {
+    $('summary').textContent = 'Erro: ' + e.message;
+  }
+}
+
+$('btnImport').onclick = async () => {
+  const list = parseContacts($('paste').value);
+  if (!list.length) return say($('impOut'), 'Nenhum telefone encontrado no texto.', false);
+  say($('impOut'), `Importando ${list.length} linhas...`, true);
+  try {
+    const r = await api('/contacts/import', {
+      method: 'POST',
+      body: JSON.stringify({ contacts: list, opt_in: $('impOpt').checked, tag: $('impTag').value }),
+    });
+    say($('impOut'),
+      `Novos: ${r.inserted} | atualizados: ${r.updated} | invalidos: ${r.invalid} | descadastrados ignorados: ${r.opted_out_ignored}`, true);
+    loadSummary();
+  } catch (e) {
+    say($('impOut'), 'Erro: ' + e.message, false);
+  }
+};
+
+// ---------- campanhas ----------
+$('btnCreate').onclick = async () => {
+  say($('cOut'), 'Criando...', true);
+  try {
+    const r = await api('/campaigns', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: $('cName').value,
+        message_body: $('cMsg').value,
+        min_delay_s: $('cMin').value,
+        max_delay_s: $('cMax').value,
+        daily_limit: $('cDaily').value,
+        window_start: $('cWs').value,
+        window_end: $('cWe').value,
+        tag: $('cTag').value,
+      }),
+    });
+    say($('cOut'), `Campanha criada com ${r.recipients} destinatarios. Clique em Iniciar abaixo.`, true);
+    loadCamps();
+  } catch (e) {
+    say($('cOut'), 'Erro: ' + e.message, false);
+  }
+};
+
+const LABEL = { draft: 'Rascunho', running: 'Rodando', paused: 'Pausada', done: 'Concluida', canceled: 'Cancelada' };
+
+async function act(c, action, question) {
+  if (question && !confirm(question)) return;
+  try {
+    await api(`/campaigns/${c.id}/${action}`, { method: 'POST' });
+  } catch (e) {
+    alert('Erro: ' + e.message);
+  }
+  loadCamps();
+}
+
+async function toggleRecipients(c, box) {
+  if (box.childNodes.length) { box.textContent = ''; return; }
+  try {
+    const rows = [
+      ...(await api(`/campaigns/${c.id}/recipients?status=failed`)),
+      ...(await api(`/campaigns/${c.id}/recipients?status=skipped`)),
+    ];
+    if (!rows.length) box.append(el('div', 'Nenhuma falha ou ignorado.', 'hint'));
+    for (const r of rows) {
+      const who = (r.contact && (r.contact.name || r.contact.phone)) || '?';
+      box.append(el('div', `${who} - ${r.status}: ${r.error || ''}`, 'rec'));
+    }
+  } catch (e) {
+    box.append(el('div', 'Erro: ' + e.message, 'err'));
+  }
+}
+
+function stat(label, value) {
+  const d = el('div');
+  d.append(el('b', String(value)), el('small', label));
+  return d;
+}
+
+function renderCamp(c) {
+  const s = c.stats;
+  const sentTotal = s.sent + s.delivered + s.read;
+  const done = s.total ? Math.round(((s.total - s.pending) / s.total) * 100) : 0;
+
+  const box = el('div', undefined, 'camp');
+  const h = el('h4', c.name);
+  h.append(el('span', LABEL[c.status] || c.status, 'badge ' + c.status));
+  box.append(h);
+  box.append(el('small',
+    `Espera ${c.min_delay_s}-${c.max_delay_s}s | ate ${c.daily_limit}/dia | ${c.window_start}h as ${c.window_end}h`));
+
+  const bar = el('div', undefined, 'bar');
+  const fill = el('div');
+  fill.style.width = done + '%';
+  bar.append(fill);
+  box.append(bar);
+
+  const stats = el('div', undefined, 'stats');
+  stats.append(stat('Total', s.total), stat('Pendentes', s.pending), stat('Enviadas', sentTotal),
+    stat('Entregues', s.delivered + s.read), stat('Lidas', s.read), stat('Falhas', s.failed), stat('Ignoradas', s.skipped));
+  box.append(stats);
+
+  if (c.note) box.append(el('div', c.note, 'note'));
+
+  const btns = el('div');
+  const add = (text, fn) => { const b = el('button', text); b.onclick = fn; btns.append(b, ' '); };
+  const details = el('div');
+  if (c.status === 'draft' || c.status === 'paused')
+    add('Iniciar', () => act(c, 'start', `Iniciar o disparo para ${s.total} contatos?`));
+  if (c.status === 'running') add('Pausar', () => act(c, 'pause'));
+  if (['draft', 'running', 'paused'].includes(c.status))
+    add('Cancelar', () => act(c, 'cancel', 'Cancelar esta campanha? Nao da para retomar.'));
+  add('Ver falhas e ignorados', () => toggleRecipients(c, details));
+  box.append(btns, details);
+  return box;
+}
+
+async function loadCamps() {
+  if (!keyInput.value.trim()) return;
+  sessionStorage.setItem('finlyKey', keyInput.value.trim());
+  const root = $('camps');
+  try {
+    const list = await api('/campaigns');
+    root.textContent = '';
+    if (!list.length) root.append(el('div', 'Nenhuma campanha ainda.', 'hint'));
+    for (const c of list) root.append(renderCamp(c));
+  } catch (e) {
+    root.textContent = 'Erro: ' + e.message;
+  }
+}
+
+$('btnReload').onclick = () => { loadSummary(); loadCamps(); };
+keyInput.onchange = () => { loadSummary(); loadCamps(); };
+if (keyInput.value) { loadSummary(); loadCamps(); }
+setInterval(() => { if (document.visibilityState === 'visible') loadCamps(); }, 10000);
+</script>
+</body>
+</html>
