@@ -4,11 +4,35 @@ import { defaultName, kindFromMime, mediaPath, previewFor, uploadMedia } from '.
 
 // ---------- utilidades ----------
 
-// Deixa so digitos e acrescenta 55 (Brasil) se vier sem codigo do pais.
+// Deixa so digitos, acrescenta 55 (Brasil) se vier sem codigo do pais e guarda sempre
+// o celular com o nono digito (ex.: 556192273131 -> 5561992273131).
 export function normalizePhone(value) {
   let d = String(value || '').replace(/\D/g, '');
   if (d.length === 10 || d.length === 11) d = '55' + d;
+  return canonicalPhone(d);
+}
+
+// Celular antigo do Brasil (8 digitos comecando em 6-9) ganhou um 9 na frente.
+export function canonicalPhone(d) {
+  d = String(d || '');
+  if (d.startsWith('55') && d.length === 12 && /[6-9]/.test(d[4])) return d.slice(0, 4) + '9' + d.slice(4);
   return d;
+}
+
+// Muitas contas antigas estao registradas no WhatsApp SEM o nono digito: testamos as duas formas.
+export function brVariants(phone) {
+  if (phone.startsWith('55') && phone.length === 13 && phone[4] === '9') {
+    return [phone, phone.slice(0, 4) + phone.slice(5)];
+  }
+  return [phone];
+}
+
+// Descobre o endereco real (JID) do numero no WhatsApp. Devolve null se a pessoa nao tem WhatsApp.
+// Se a consulta em si falhar (Evolution fora do ar), lanca erro: nao e o mesmo que "nao tem WhatsApp".
+export async function resolveJid(channel, phone) {
+  const results = await evolution.checkNumbers(channel.instance_name, brVariants(phone));
+  const hit = results.find((r) => r?.exists && r.jid);
+  return hit ? hit.jid : null;
 }
 
 // ---------- canais ----------

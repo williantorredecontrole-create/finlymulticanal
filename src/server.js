@@ -15,12 +15,10 @@ app.use(express.json({ limit: '10mb' }));
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-// Painel simples de teste: /teste
-app.use('/teste', express.static(path.join(here, '..', 'public')));
-// Contatos e campanhas: /campanhas
+// Telas: /inbox (atendimento) e /campanhas (administrador)
+app.get('/', (_req, res) => res.redirect('/inbox'));
+app.get('/health', (_req, res) => res.json({ ok: true, app: 'finly-backend' }));
 app.get('/campanhas', (_req, res) => res.sendFile(path.join(here, '..', 'public', 'campanhas.html')));
-
-app.get('/', (_req, res) => res.json({ ok: true, app: 'finly-backend' }));
 app.use('/webhook', webhook);
 app.use('/auth', authRoutes);
 // Tela de atendimento: /inbox
@@ -53,7 +51,7 @@ app.listen(port, '0.0.0.0', async () => {
     console.error('Nao foi possivel preparar o administrador:', e.message);
   }
 
-  for (const name of ['EVOLUTION_URL', 'EVOLUTION_API_KEY', 'FINLY_API_KEY', 'WEBHOOK_SECRET']) {
+  for (const name of ['EVOLUTION_URL', 'EVOLUTION_API_KEY', 'WEBHOOK_SECRET']) {
     if (!process.env[name]) console.warn(`Atencao: variavel ${name} nao definida.`);
   }
 

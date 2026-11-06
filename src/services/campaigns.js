@@ -1,5 +1,5 @@
 import { supabase } from '../db.js';
-import { getOrCreateConversation, sendMediaMessage, sendTextMessage } from './messaging.js';
+import { getOrCreateConversation, resolveJid, sendMediaMessage, sendTextMessage } from './messaging.js';
 import { downloadMedia } from './media.js';
 
 // Motor de disparos. Roda dentro do proprio servidor: a cada 3 segundos olha as
@@ -37,7 +37,12 @@ export function renderMessage(template, contact) {
     return list[Math.floor(Math.random() * list.length)];
   });
   let first = String(contact?.name || '').trim().split(/\s+/)[0] || '';
-  if (first) first = first.charAt(0).toUpperCase() + first.slice(1);
+  // Planilhas costumam vir em MAIUSCULAS (ou minusculas): arruma para "Maria". Nomes ja bem escritos ficam como estao.
+  if (first && (first === first.toUpperCase() || first === first.toLowerCase())) {
+    first = first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+  } else if (first) {
+    first = first.charAt(0).toUpperCase() + first.slice(1);
+  }
   t = t.replace(/\{nome\}/gi, first);
   return t.replace(/[ \t]{2,}/g, ' ').replace(/ ([,.!?])/g, '$1').trim();
 }
@@ -70,7 +75,14 @@ async function campaignMedia(c) {
 async function sendOne(c, channel, recipient, contact, media) {
   const text = renderMessage(c.message_body, contact);
   try {
-    const conversation = await getOrCreateConversation(channel.id, `${contact.phone}@s.whatsapp.net`, contact.id);
+    // Confirma o endereco real do numero (com ou sem o nono digito). Sem WhatsApp = ignora.
+    const jid = await resolveJid(channel, contact.phone);
+    if (!jid) {
+      await markRecipient(recipient.id, 'skipped', 'sem WhatsApp');
+      nextAt.set(c.id, Date.now() + 2000); // so uma consulta a cada 2 s, sem esperar o delay inteiro
+      return;
+    }
+    const conversation = await getOrCreateConversation(channel.id, jid, contact.id);
     // Com anexo, o texto vira a legenda do arquivo
     const msg = media
       ? await sendMediaMessage({

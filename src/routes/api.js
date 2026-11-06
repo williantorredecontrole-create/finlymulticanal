@@ -4,6 +4,7 @@ import {
   normalizePhone,
   getOrCreateContact,
   getOrCreateConversation,
+  resolveJid,
   sendTextMessage,
 } from '../services/messaging.js';
 import campaignsRouter from './campaigns.js';
@@ -12,7 +13,7 @@ import { authenticate, requireAdmin } from '../services/auth.js';
 
 const router = Router();
 
-// Protecao: login do atendente (Bearer token) OU header x-api-key (FINLY_API_KEY)
+// Protecao: so com login (Authorization: Bearer <token da sessao>)
 router.use(authenticate);
 
 async function pickChannel(channelId) {
@@ -62,8 +63,10 @@ router.post('/send', async (req, res) => {
     if (!channel) return res.status(400).json({ error: 'nenhum canal cadastrado (defina EVOLUTION_INSTANCE)' });
 
     const phone = normalizePhone(number);
+    const jid = await resolveJid(channel, phone);
+    if (!jid) return res.status(400).json({ error: 'este numero nao tem WhatsApp' });
     const contact = await getOrCreateContact({ phone });
-    const conversation = await getOrCreateConversation(channel.id, `${phone}@s.whatsapp.net`, contact.id);
+    const conversation = await getOrCreateConversation(channel.id, jid, contact.id);
     const message = await sendTextMessage({ channel, conversation, text });
     res.json({ ok: true, message });
   } catch (e) {

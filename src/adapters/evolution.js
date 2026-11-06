@@ -75,6 +75,13 @@ export async function getMediaBase64(instance, key, message) {
   throw lastErr;
 }
 
+// Confirma quais numeros existem no WhatsApp e devolve o endereco (JID) verdadeiro de cada um:
+// [{ exists, jid, number }]
+export async function checkNumbers(instance, numbers) {
+  const data = await call(`/chat/whatsappNumbers/${enc(instance)}`, { body: { numbers } });
+  return Array.isArray(data) ? data : [];
+}
+
 export async function connectionState(instance) {
   return call(`/instance/connectionState/${enc(instance)}`, { method: 'GET' });
 }

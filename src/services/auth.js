@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import ws from 'ws';
 import { supabase } from '../db.js';
@@ -38,30 +37,17 @@ export async function agentFromToken(token) {
   return agent;
 }
 
-function safeEqual(a, b) {
-  const x = Buffer.from(String(a));
-  const y = Buffer.from(String(b));
-  return x.length === y.length && crypto.timingSafeEqual(x, y);
-}
-
-// Aceita: Authorization: Bearer <token do atendente>  OU  x-api-key (acesso admin tecnico)
+// Exige o login do atendente: Authorization: Bearer <token da sessao>
 export async function authenticate(req, res, next) {
   try {
     const header = req.get('authorization') || '';
-    if (header.toLowerCase().startsWith('bearer ')) {
-      const agent = await agentFromToken(header.slice(7).trim());
-      if (!agent) return res.status(401).json({ error: 'sessao invalida ou expirada' });
-      req.agent = agent;
-      return next();
-    }
-    const key = req.get('x-api-key');
-    if (key && process.env.FINLY_API_KEY && safeEqual(key, process.env.FINLY_API_KEY)) {
-      req.agent = { id: null, name: 'API', role: 'admin', viaApiKey: true };
-      return next();
-    }
-    return res.status(401).json({ error: 'nao autorizado' });
+    if (!header.toLowerCase().startsWith('bearer ')) return res.status(401).json({ error: 'nao autorizado' });
+    const agent = await agentFromToken(header.slice(7).trim());
+    if (!agent) return res.status(401).json({ error: 'sessao invalida ou expirada' });
+    req.agent = agent;
+    next();
   } catch (e) {
-    return res.status(500).json({ error: e.message });
+    res.status(500).json({ error: e.message });
   }
 }
 

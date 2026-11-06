@@ -11,27 +11,24 @@ Recebe mensagens da Evolution API (webhook), salva no Supabase e envia mensagens
 | EVOLUTION_URL | URL publica da Evolution (https://...up.railway.app) |
 | EVOLUTION_API_KEY | AUTHENTICATION_API_KEY da Evolution |
 | EVOLUTION_INSTANCE | Nome da instancia (teste) |
-| FINLY_API_KEY | Senha longa inventada por voce (protege a API) |
 | WEBHOOK_SECRET | Outra senha longa inventada (protege o webhook) |
 | ADMIN_EMAIL / ADMIN_PASSWORD / ADMIN_NAME | Cria o primeiro administrador do inbox (apague a senha depois) |
 | ADMIN_RESET | `true` junto com ADMIN_PASSWORD redefine a senha do admin no proximo deploy |
 
 ## Rotas
 
-- `GET /` confere se esta no ar
+- `GET /health` confere se esta no ar (a raiz `/` leva ao /inbox)
 - `POST /webhook/evolution?secret=WEBHOOK_SECRET` recebe eventos da Evolution
-- `GET /teste` painel simples para testar envio e ver conversas
 - `GET /api/conversations`, `GET /api/conversations/:id/messages`
 - `POST /api/send` com `{ "number": "62999999999", "text": "Ola" }`
 - `POST /api/conversations/:id/reply` com `{ "text": "Ola" }`
 
-As rotas `/api` exigem o header `x-api-key` com o valor de FINLY_API_KEY.
+As rotas `/api` exigem login (header `Authorization: Bearer <token>`). Nao ha mais chave tecnica.
 
 ## Telas
 
 - `/inbox` atendimento com login (conversas, chat, atribuicao, equipe)
 - `/campanhas` contatos e disparos (login de administrador; usa a mesma sessao do /inbox)
-- `/teste` painel tecnico de teste (usa a FINLY_API_KEY; pode ser removido)
 
 ## Inbox / login
 
@@ -58,3 +55,11 @@ Rode `finly_migracao_03_inbox.sql` no Supabase antes do deploy.
   `POST /api/campaigns/:id/media/remove`. So em campanha em rascunho ou pausada.
 - O arquivo e guardado uma vez; cada contato recebe a mesma midia. Rode `finly_migracao_05_campanha_midia.sql`
   (depois da 04) antes do deploy.
+
+## Numeros do WhatsApp (Brasil)
+
+- Telefones sao guardados sempre com o nono digito (`5561992273131`).
+- Antes de cada envio de campanha o Finly consulta a Evolution (`/chat/whatsappNumbers`) testando o numero com e
+  sem o 9 e envia para o endereco (JID) que realmente existe. Quem nao tem WhatsApp fica como
+  "ignorado: sem WhatsApp" (nao conta como falha e nao pausa a campanha).
+- Falha da propria consulta (Evolution fora do ar) fica como falha normal.

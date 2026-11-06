@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { supabase } from '../db.js';
 import {
+  canonicalPhone,
   getChannelByInstance,
   getOrCreateContact,
   getOrCreateConversation,
@@ -77,7 +78,7 @@ async function handleUpsert(channel, m) {
 
   // Telefone real (quando o WhatsApp manda o identificador "lid", usa o alternativo se existir)
   const phoneJid = [jid, key.remoteJidAlt].find((j) => j && j.endsWith('@s.whatsapp.net'));
-  const phone = phoneJid ? phoneJid.split('@')[0].replace(/\D/g, '') : null;
+  const phone = phoneJid ? canonicalPhone(phoneJid.split('@')[0].replace(/\D/g, '')) : null;
 
   const fromMe = !!key.fromMe;
   const contact = await getOrCreateContact({ phone, name: fromMe ? null : m.pushName });

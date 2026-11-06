@@ -3,7 +3,7 @@ import { supabase } from '../db.js';
 import { normalizePhone } from '../services/messaging.js';
 import { MAX_BYTES, defaultName, kindFromMime, mediaPath, uploadMedia } from '../services/media.js';
 
-// Estas rotas sao montadas dentro de /api (ja protegidas pela x-api-key).
+// Estas rotas sao montadas dentro de /api (ja protegidas pelo login; somente administradores).
 const router = Router();
 
 const fail = (res, e, code = 500) => res.status(code).json({ error: e.message || String(e) });
