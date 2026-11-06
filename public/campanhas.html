@@ -26,15 +26,32 @@
   .note { color: #c0392b; margin: 6px 0; }
   .rec { font-size: 13px; padding: 2px 0; border-bottom: 1px solid #8883; }
   .ok { color: #2a9d8f; } .err { color: #c0392b; }
+  .bar2 { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .bar2 h2 { margin: 0; flex: 1; }
+  .loginbox { max-width: 340px; margin: 28px 0; }
+  .loginbox label { display: block; margin-top: 10px; }
+  .loginbox input { width: 100%; }
+  .loginbox button { margin-top: 14px; }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
-<h2>Finly - campanhas</h2>
-<p><a href="/teste/">Conversas e envio individual</a></p>
+<div class="bar2">
+  <h2>Finly - campanhas</h2>
+  <a href="/inbox">Conversas</a>
+  <span class="hint" id="who"></span>
+  <button id="logout" hidden>Sair</button>
+</div>
 
-<label>Chave do Finly (FINLY_API_KEY)
-  <input id="key" type="password" autocomplete="off">
-</label>
+<form class="loginbox" id="loginForm" hidden>
+  <div class="hint">Entre com a conta de administrador.</div>
+  <label>E-mail <input id="email" type="email" autocomplete="username" required></label>
+  <label>Senha <input id="password" type="password" autocomplete="current-password" required></label>
+  <button type="submit">Entrar</button>
+  <div class="err" id="loginErr"></div>
+</form>
+
+<div id="panel" hidden>
 
 <fieldset>
   <legend>1. Contatos</legend>
@@ -84,17 +101,59 @@
   <div id="camps"></div>
 </fieldset>
 
+</div>
+
 <script>
 const $ = (id) => document.getElementById(id);
-const keyInput = $('key');
-keyInput.value = sessionStorage.getItem('finlyKey') || '';
+const S = { access: localStorage.getItem('finly_a'), refresh: localStorage.getItem('finly_r'), me: null };
+
+function saveTokens(t) {
+  S.access = t.access_token; S.refresh = t.refresh_token;
+  localStorage.setItem('finly_a', S.access);
+  localStorage.setItem('finly_r', S.refresh);
+}
+function showLogin(msg) {
+  S.me = null;
+  $('panel').hidden = true; $('loginForm').hidden = false;
+  $('logout').hidden = true; $('who').textContent = '';
+  $('loginErr').textContent = msg || '';
+}
+function logout(msg) {
+  S.access = S.refresh = null;
+  localStorage.removeItem('finly_a'); localStorage.removeItem('finly_r');
+  showLogin(msg);
+}
+
+let refreshing = null;
+function doRefresh() {
+  if (!S.refresh) return Promise.resolve(false);
+  if (!refreshing) {
+    refreshing = fetch('/auth/refresh', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: S.refresh }),
+    })
+      .then(async (r) => { if (!r.ok) return false; saveTokens((await r.json()).session); return true; })
+      .catch(() => false)
+      .finally(() => { refreshing = null; });
+  }
+  return refreshing;
+}
+
+// fetch com o login do administrador (renova a sessao sozinho)
+async function authFetch(url, options = {}, retry = true) {
+  const res = await fetch(url, {
+    ...options,
+    headers: { ...(options.headers || {}), ...(S.access ? { Authorization: 'Bearer ' + S.access } : {}) },
+  });
+  if (res.status === 401 && retry && (await doRefresh())) return authFetch(url, options, false);
+  if (res.status === 401) { logout('Sessao expirada. Entre novamente.'); throw new Error('sessao expirada'); }
+  return res;
+}
 
 async function api(path, options = {}) {
-  const res = await fetch('/api' + path, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', 'x-api-key': keyInput.value.trim() },
-  });
+  const res = await authFetch('/api' + path, { ...options, headers: { 'Content-Type': 'application/json' } });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 403) throw new Error('apenas administradores podem usar esta tela');
   if (!res.ok) throw new Error(data.error || 'erro ' + res.status);
   return data;
 }
@@ -170,10 +229,9 @@ function fmtSize(n) {
 
 async function uploadCampaignMedia(id, file) {
   if (file.size > MAX_UPLOAD) throw new Error('arquivo acima de 20 MB');
-  const res = await fetch('/api/campaigns/' + id + '/media', {
+  const res = await authFetch('/api/campaigns/' + id + '/media', {
     method: 'POST',
     headers: {
-      'x-api-key': keyInput.value.trim(),
       'Content-Type': 'application/octet-stream', // o tipo real vai em X-File-Type
       'X-File-Type': file.type || 'application/octet-stream',
       'X-File-Name': encodeURIComponent(file.name),
@@ -317,8 +375,7 @@ function renderCamp(c) {
 }
 
 async function loadCamps() {
-  if (!keyInput.value.trim()) return;
-  sessionStorage.setItem('finlyKey', keyInput.value.trim());
+  if (!S.me) return;
   const root = $('camps');
   try {
     const list = await api('/campaigns');
@@ -331,9 +388,50 @@ async function loadCamps() {
 }
 
 $('btnReload').onclick = () => { loadSummary(); loadCamps(); };
-keyInput.onchange = () => { loadSummary(); loadCamps(); };
-if (keyInput.value) { loadSummary(); loadCamps(); }
+
+function start(agent) {
+  if (agent.role !== 'admin') {
+    showLogin('Esta tela e so para administradores. Entre com uma conta de administrador.');
+    return;
+  }
+  S.me = agent;
+  $('loginForm').hidden = true; $('panel').hidden = false;
+  $('who').textContent = agent.name; $('logout').hidden = false;
+  loadSummary(); loadCamps();
+}
+
+$('loginForm').onsubmit = async (ev) => {
+  ev.preventDefault();
+  $('loginErr').textContent = '';
+  try {
+    const res = await fetch('/auth/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: $('email').value, password: $('password').value }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'erro ao entrar');
+    saveTokens(data.session);
+    $('password').value = '';
+    start(data.agent);
+  } catch (e) {
+    $('loginErr').textContent = e.message;
+  }
+};
+$('logout').onclick = () => logout();
+
+async function boot() {
+  if (!S.access) return showLogin();
+  try {
+    const res = await authFetch('/api/me');
+    if (!res.ok) return showLogin();
+    start((await res.json()).agent);
+  } catch (_) {
+    if (!S.me) showLogin();
+  }
+}
+
 setInterval(() => { if (document.visibilityState === 'visible') loadCamps(); }, 10000);
+boot();
 </script>
 </body>
 </html>

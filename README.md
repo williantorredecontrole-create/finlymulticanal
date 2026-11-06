@@ -30,8 +30,8 @@ As rotas `/api` exigem o header `x-api-key` com o valor de FINLY_API_KEY.
 ## Telas
 
 - `/inbox` atendimento com login (conversas, chat, atribuicao, equipe)
-- `/campanhas` contatos e disparos (usa a FINLY_API_KEY)
-- `/teste` painel tecnico de teste
+- `/campanhas` contatos e disparos (login de administrador; usa a mesma sessao do /inbox)
+- `/teste` painel tecnico de teste (usa a FINLY_API_KEY; pode ser removido)
 
 ## Inbox / login
 
