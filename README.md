@@ -63,3 +63,18 @@ Rode `finly_migracao_03_inbox.sql` no Supabase antes do deploy.
   sem o 9 e envia para o endereco (JID) que realmente existe. Quem nao tem WhatsApp fica como
   "ignorado: sem WhatsApp" (nao conta como falha e nao pausa a campanha).
 - Falha da propria consulta (Evolution fora do ar) fica como falha normal.
+
+## Equipes e direcionamento de respostas
+
+- Admin cria equipes (aba Equipes do /inbox), define quem faz parte e se as respostas sao distribuidas
+  automaticamente (atendente com menos conversas abertas) ou ficam numa fila da equipe.
+- Cada campanha escolhe a equipe que recebe as respostas. Quando o cliente responde (ate 7 dias depois do
+  disparo), a conversa vai para a equipe. Se quem ja atende o cliente for da equipe, ele continua com a conversa.
+  Cada campanha direciona uma unica vez (troca manual do atendente e respeitada).
+- Atendentes podem enviar uma conversa para outra equipe e filtrar a lista por equipe.
+- `GET/POST /api/teams`, `POST /api/teams/:id/update|delete|members`, `POST /api/inbox/conversations/:id/team`,
+  `POST /api/campaigns/:id/team`. Rode `finly_migracao_06_equipes.sql` antes do deploy.
+
+## Visual
+
+- Estilos em `public/assets/app.css` (compartilhado). A cor identifica a equipe em toda a interface.

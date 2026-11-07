@@ -4,199 +4,150 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Finly</title>
-<style>
-  :root {
-    color-scheme: light dark;
-    --bg: #f4f6f8; --panel: #ffffff; --line: #dde2e7; --text: #1b2733; --muted: #6b7885;
-    --accent: #1f9d8b; --accent-text: #ffffff; --in: #ffffff; --out: #d9f3ee; --hover: #eef2f5; --active: #e3f1ee;
-    --danger: #c0392b;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #11171c; --panel: #1a232b; --line: #2b3640; --text: #e6ecf1; --muted: #8ea0ae;
-      --accent: #2bb8a3; --accent-text: #08201c; --in: #25313b; --out: #1d4a43; --hover: #212c35; --active: #20353a;
-    }
-  }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
-  body { font-family: system-ui, -apple-system, Segoe UI, sans-serif; background: var(--bg); color: var(--text); }
-  button, input, textarea, select { font: inherit; color: inherit; }
-  button { cursor: pointer; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 7px 12px; }
-  button:hover { background: var(--hover); }
-  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
-  button.danger { color: var(--danger); }
-  input, textarea, select { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
-  [hidden] { display: none !important; }
-
-  /* login */
-  #login { height: 100%; display: flex; align-items: center; justify-content: center; padding: 16px; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 28px; width: 100%; max-width: 360px; }
-  .card h1 { margin: 0 0 4px; font-size: 24px; }
-  .card label { display: block; margin-top: 12px; font-size: 13px; color: var(--muted); }
-  .card input { width: 100%; margin-top: 4px; }
-  .card button { width: 100%; margin-top: 18px; padding: 10px; }
-  .err { color: var(--danger); font-size: 14px; margin-top: 10px; min-height: 18px; }
-
-  /* app */
-  #app { height: 100%; display: flex; flex-direction: column; }
-  header { display: flex; align-items: center; gap: 12px; padding: 0 16px; height: 56px; background: var(--panel); border-bottom: 1px solid var(--line); flex: none; }
-  header .brand { font-weight: 700; font-size: 18px; color: var(--accent); }
-  header nav { display: flex; gap: 4px; flex: 1; }
-  header nav button, header nav a { border: none; background: none; padding: 8px 12px; border-radius: 8px; color: var(--text); text-decoration: none; font-size: 15px; }
-  header nav button.on { background: var(--active); font-weight: 600; }
-  header .who { font-size: 14px; color: var(--muted); }
-
-  .split { flex: 1; min-height: 0; display: grid; grid-template-columns: 340px 1fr; }
-  #side { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
-  .filters { display: flex; flex-wrap: wrap; gap: 4px; padding: 10px 10px 4px; }
-  .filters button { padding: 4px 10px; font-size: 13px; border-radius: 14px; }
-  .filters button.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
-  #search { margin: 6px 10px 8px; }
-  #list { flex: 1; overflow-y: auto; }
-  .conv { display: flex; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); cursor: pointer; }
-  .conv:hover { background: var(--hover); }
-  .conv.on { background: var(--active); }
-  .avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--accent); color: var(--accent-text); display: flex; align-items: center; justify-content: center; font-weight: 700; flex: none; }
-  .conv .mid { flex: 1; min-width: 0; }
-  .conv .top { display: flex; justify-content: space-between; gap: 8px; }
-  .conv .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .conv .time { font-size: 12px; color: var(--muted); flex: none; }
-  .conv .prev { font-size: 14px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .conv .meta { font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; align-items: center; margin-top: 2px; }
-  .badge { background: var(--accent); color: var(--accent-text); border-radius: 10px; padding: 1px 7px; font-size: 12px; font-weight: 700; }
-  .empty { padding: 24px; text-align: center; color: var(--muted); }
-
-  #chat { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-  #chatBox { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-  .chat-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-  .chat-head .titles { flex: 1; min-width: 160px; }
-  .chat-head .t { font-weight: 700; }
-  .chat-head .s { font-size: 13px; color: var(--muted); }
-  .chat-head .ctl { display: flex; gap: 6px; flex-wrap: wrap; }
-  #back { display: none; }
-  #msgs { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 6px; }
-  .day { align-self: center; font-size: 12px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 2px 10px; margin: 6px 0; }
-  .bubble { max-width: min(75%, 560px); padding: 7px 10px 5px; border-radius: 10px; background: var(--in); border: 1px solid var(--line); white-space: pre-wrap; word-break: break-word; }
-  .bubble.out { align-self: flex-end; background: var(--out); border-color: transparent; }
-  .bubble .who { font-size: 12px; font-weight: 700; color: var(--accent); margin-bottom: 2px; }
-  .bubble .m { font-size: 11px; color: var(--muted); text-align: right; margin-top: 2px; }
-  .bubble .m .read { color: #2f9bff; }
-  .bubble .m .bad { color: var(--danger); }
-  .composer { display: flex; gap: 8px; padding: 10px 14px; background: var(--panel); border-top: 1px solid var(--line); }
-  .composer textarea { flex: 1; resize: none; height: 44px; max-height: 140px; }
-  .composer button { padding: 0 18px; }
-  #chatEmpty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--muted); }
-  .composer #attach { padding: 0 12px; font-size: 18px; }
-  .pending { display: flex; align-items: center; gap: 10px; padding: 6px 14px; background: var(--panel); border-top: 1px solid var(--line); font-size: 13px; }
-  .pending img { height: 44px; border-radius: 6px; }
-  .pending span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .bubble img.media, .bubble video.media { display: block; max-width: 100%; max-height: 320px; border-radius: 8px; cursor: zoom-in; }
-  .bubble video.media { cursor: default; }
-  .bubble img.sticker { max-height: 160px; cursor: default; }
-  .bubble audio { display: block; width: 260px; max-width: 100%; }
-  .mph { min-width: 190px; min-height: 80px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 8px; background: var(--hover); border-radius: 8px; color: var(--muted); font-size: 13px; }
-  .file { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); cursor: pointer; min-width: 190px; }
-  .file small { color: var(--muted); margin-left: auto; }
-  .bubble .cap { margin-top: 4px; }
-  #lightbox { position: fixed; inset: 0; background: #000d; display: flex; align-items: center; justify-content: center; z-index: 50; cursor: zoom-out; }
-  #lightbox img { max-width: 94vw; max-height: 94vh; }
-
-  /* equipe */
-  #team { flex: 1; overflow-y: auto; padding: 20px; max-width: 760px; width: 100%; margin: 0 auto; }
-  #team h2 { margin-top: 0; }
-  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .agent { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
-  .agent .info { flex: 1; min-width: 180px; }
-  .agent .info small { color: var(--muted); display: block; }
-  .off { opacity: .55; }
-  fieldset { border: 1px solid var(--line); border-radius: 10px; margin: 18px 0; padding: 12px 14px; }
-
-  @media (max-width: 760px) {
-    .split { grid-template-columns: 1fr; }
-    #chat { display: none; }
-    .chat-open #side { display: none; }
-    .chat-open #chat { display: flex; }
-    #back { display: inline-block; }
-    header .who { display: none; }
-  }
-</style>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230f3b3f'/%3E%3Cpath d='M11 9h11v3h-7.5v3H21v3h-6.5v5H11z' fill='%23e8a317'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
 
-<div id="login" hidden>
-  <form class="card" id="loginForm">
-    <h1>Finly</h1>
-    <div style="color:var(--muted)">Entre para atender as conversas</div>
-    <label>E-mail <input id="email" type="email" autocomplete="username" required></label>
-    <label>Senha <input id="password" type="password" autocomplete="current-password" required></label>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z"/></symbol>
+  <symbol id="i-megaphone" viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 6a9 9 0 0 1 0 12"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/></symbol>
+  <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7.5"/><line x1="21" y1="21" x2="16.7" y2="16.7"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24"><path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><polyline points="5 12.5 10 17.5 19 7.5"/></symbol>
+  <symbol id="i-check2" viewBox="0 0 24 24"><polyline points="2 12.5 7 17.5 16 7.5"/><polyline points="12 16 14 18 22 7.5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12" y2="17.01"/></symbol>
+</svg>
+
+<div id="login" class="login" hidden>
+  <div class="login-art">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#e8a317"/><path d="M11 9h11v3h-7.5v3H21v3h-6.5v5H11z" fill="#0f3b3f"/></svg>
+      <span>Finly</span>
+    </div>
+    <p>Atendimento e cobranças do WhatsApp, cada cliente com a equipe certa.</p>
+    <small>Cartão de Todos</small>
+  </div>
+  <form class="login-form" id="loginForm">
+    <h1>Entrar</h1>
+    <label class="field">E-mail <input id="email" type="email" autocomplete="username" required></label>
+    <label class="field">Senha <input id="password" type="password" autocomplete="current-password" required></label>
     <button class="primary" type="submit">Entrar</button>
     <div class="err" id="loginErr"></div>
   </form>
 </div>
 
 <div id="app" hidden>
-  <header>
-    <span class="brand">Finly</span>
+  <aside id="rail">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#e8a317"/><path d="M11 9h11v3h-7.5v3H21v3h-6.5v5H11z" fill="#0f3b3f"/></svg>
+      <span>Finly</span>
+    </div>
     <nav>
-      <button id="tabInbox" class="on">Conversas</button>
-      <button id="tabTeam" hidden>Equipe</button>
-      <a id="linkCamp" href="/campanhas" hidden>Campanhas</a>
+      <button id="tabInbox" class="nav on"><svg class="ic"><use href="#i-chat"/></svg><span>Conversas</span><i class="badge" id="navBadge" hidden></i></button>
+      <a id="linkCamp" class="nav" href="/campanhas" hidden><svg class="ic"><use href="#i-megaphone"/></svg><span>Campanhas</span></a>
+      <button id="tabTeam" class="nav" hidden><svg class="ic"><use href="#i-users"/></svg><span>Equipes</span></button>
     </nav>
-    <span class="who" id="who"></span>
-    <button id="logout">Sair</button>
-  </header>
+    <div class="me">
+      <span class="avatar sm" id="meAvatar"></span>
+      <span id="who"></span>
+      <button id="logout" class="icon-btn" title="Sair" aria-label="Sair"><svg class="ic"><use href="#i-logout"/></svg></button>
+    </div>
+  </aside>
 
-  <main class="split" id="inbox">
-    <aside id="side">
-      <div class="filters" id="filters">
-        <button data-f="all" class="on">Abertas</button>
-        <button data-f="mine">Minhas</button>
-        <button data-f="unassigned">Sem dono</button>
-        <button data-f="unread">Nao lidas</button>
-        <button data-f="closed">Encerradas</button>
-      </div>
-      <input id="search" type="search" placeholder="Buscar nome ou telefone">
-      <div id="list"></div>
-    </aside>
-    <section id="chat">
-      <div id="chatEmpty">Selecione uma conversa</div>
-      <div id="chatBox" hidden>
-        <div class="chat-head">
-          <button id="back">&larr;</button>
-          <div class="titles"><div class="t" id="chatTitle"></div><div class="s" id="chatSub"></div></div>
-          <div class="ctl" id="chatCtl"></div>
+  <div id="views">
+    <main class="split" id="inbox">
+      <aside id="side">
+        <div class="side-top">
+          <h2>Conversas</h2>
+          <div class="search"><svg class="ic"><use href="#i-search"/></svg><input id="search" type="search" placeholder="Buscar nome ou telefone" aria-label="Buscar conversa"></div>
+          <div class="filters" id="filters">
+            <button data-f="all" class="on">Abertas</button>
+            <button data-f="mine">Minhas</button>
+            <button data-f="unassigned">Sem dono</button>
+            <button data-f="unread">Não lidas</button>
+            <button data-f="closed">Encerradas</button>
+          </div>
+          <select id="teamFilter" hidden aria-label="Filtrar por equipe"></select>
         </div>
-        <div id="msgs"></div>
-        <div class="pending" id="pending" hidden>
-          <img id="pendThumb" alt="" hidden>
-          <span id="pendName"></span>
-          <button id="pendX">Remover</button>
-        </div>
-        <div class="composer">
-          <button id="attach" title="Anexar arquivo (ou cole uma imagem com Ctrl+V)">&#128206;</button>
-          <input id="file" type="file" hidden>
-          <textarea id="text" placeholder="Digite a mensagem (Enter envia, Shift+Enter quebra linha)"></textarea>
-          <button class="primary" id="send">Enviar</button>
-        </div>
-      </div>
-    </section>
-  </main>
+        <div id="list"></div>
+      </aside>
 
-  <main id="team" hidden>
-    <h2>Equipe</h2>
-    <div id="agents"></div>
-    <fieldset>
-      <legend>Novo atendente</legend>
-      <div class="row">
-        <input id="nName" placeholder="Nome">
-        <input id="nEmail" type="email" placeholder="E-mail">
-        <input id="nPass" type="text" placeholder="Senha (min. 8)">
-        <select id="nRole"><option value="agent">Atendente</option><option value="admin">Administrador</option></select>
-        <button class="primary" id="nAdd">Criar</button>
+      <section id="chat">
+        <div id="chatEmpty"><svg class="ic"><use href="#i-chat"/></svg><span>Escolha uma conversa para começar</span></div>
+        <div id="chatBox" hidden>
+          <div class="chat-head">
+            <button id="back" class="icon-btn ghost" aria-label="Voltar"><svg class="ic"><use href="#i-back"/></svg></button>
+            <div class="avatar" id="chatAvatar"></div>
+            <div class="titles"><div class="t" id="chatTitle"></div><div class="s" id="chatSub"></div></div>
+            <div class="ctl" id="chatCtl"></div>
+          </div>
+          <div id="msgs"></div>
+          <div class="pending" id="pending" hidden>
+            <img id="pendThumb" alt="" hidden>
+            <span id="pendName"></span>
+            <button id="pendX">Remover</button>
+          </div>
+          <div class="composer">
+            <button id="attach" class="icon-btn" title="Anexar arquivo (ou cole uma imagem com Ctrl+V)" aria-label="Anexar arquivo"><svg class="ic"><use href="#i-clip"/></svg></button>
+            <input id="file" type="file" hidden>
+            <textarea id="text" rows="1" placeholder="Escreva uma mensagem" title="Enter envia, Shift+Enter quebra a linha" aria-label="Mensagem"></textarea>
+            <button class="primary icon-btn" id="send" title="Enviar" aria-label="Enviar"><svg class="ic"><use href="#i-send"/></svg></button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <main class="page" id="team" hidden>
+      <div class="page-inner">
+        <div class="page-head">
+          <h1>Equipes e atendentes</h1>
+          <p>Cada equipe tem uma cor. Quando alguém responde a uma campanha, a conversa vai para a equipe escolhida nela.</p>
+        </div>
+        <div class="cols2">
+          <section class="panel">
+            <div class="panel-head"><h2>Equipes</h2></div>
+            <p class="lead">Ex.: uma campanha de cobrança pode enviar as respostas para a equipe de Adimplência.</p>
+            <div id="teams"></div>
+            <div class="fieldset">
+              <h3>Nova equipe</h3>
+              <div class="row">
+                <input id="tmName" placeholder="Nome da equipe" aria-label="Nome da equipe">
+                <button class="primary" id="tmAdd">Criar equipe</button>
+              </div>
+              <div class="err" id="tmErr"></div>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h2>Atendentes</h2></div>
+            <div id="agents"></div>
+            <div class="fieldset">
+              <h3>Novo atendente</h3>
+              <div class="row">
+                <input id="nName" placeholder="Nome" aria-label="Nome">
+                <input id="nEmail" type="email" placeholder="E-mail" aria-label="E-mail">
+              </div>
+              <div class="row" style="margin-top:8px">
+                <input id="nPass" type="text" placeholder="Senha (mínimo 8 caracteres)" aria-label="Senha">
+                <select id="nRole" aria-label="Perfil"><option value="agent">Atendente</option><option value="admin">Administrador</option></select>
+                <button class="primary" id="nAdd">Criar atendente</button>
+              </div>
+              <div class="err" id="teamErr"></div>
+            </div>
+          </section>
+        </div>
       </div>
-      <div class="err" id="teamErr"></div>
-    </fieldset>
-  </main>
+    </main>
+  </div>
 </div>
 
 <script>
@@ -207,13 +158,38 @@ function el(tag, text, cls) {
   if (cls) e.className = cls;
   return e;
 }
+function icon(id, cls) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const s = document.createElementNS(NS, 'svg');
+  s.setAttribute('class', 'ic' + (cls ? ' ' + cls : ''));
+  s.setAttribute('aria-hidden', 'true');
+  const u = document.createElementNS(NS, 'use');
+  u.setAttribute('href', '#i-' + id);
+  s.append(u);
+  return s;
+}
 
 const S = {
   access: localStorage.getItem('finly_a'),
   refresh: localStorage.getItem('finly_r'),
-  me: null, agents: [], filter: 'all', q: '', sel: null,
+  me: null, agents: [], teams: [], filter: 'all', teamFilter: 'all', q: '', sel: null,
   listReq: 0, unread: null, msgSig: '', headSig: '', timers: [], audio: null, pending: null,
 };
+
+// ---------- cores e avatares ----------
+const HUES = [190, 28, 268, 340, 142, 216, 48, 8];
+function hash(str) { let h = 0; for (const c of String(str)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; }
+const teamHue = (id) => HUES[hash(id) % HUES.length];
+function avatarEl(name, cls) {
+  const a = el('div', (String(name || '?').trim().charAt(0) || '?').toUpperCase(), 'avatar' + (cls ? ' ' + cls : ''));
+  a.style.setProperty('--av', String(hash(name) % 360));
+  return a;
+}
+function teamChip(team) {
+  const c = el('span', team.name, 'chip team tm');
+  c.style.setProperty('--h', String(teamHue(team.id)));
+  return c;
+}
 
 // ---------- sessao ----------
 function saveTokens(s) {
@@ -256,7 +232,7 @@ async function api(path, opts = {}, retry = true) {
   });
   if (res.status === 401 && retry && (await doRefresh())) return api(path, opts, false);
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401) { logout('Sessao expirada. Entre novamente.'); throw new Error('sessao expirada'); }
+  if (res.status === 401) { logout('Sessão expirada. Entre novamente.'); throw new Error('sessao expirada'); }
   if (!res.ok) throw new Error(data.error || 'erro ' + res.status);
   return data;
 }
@@ -289,13 +265,16 @@ async function start(agent) {
   S.me = agent;
   $('login').hidden = true; $('app').hidden = false;
   $('who').textContent = agent.name + (agent.role === 'admin' ? ' (admin)' : '');
+  const av = $('meAvatar'); av.textContent = (agent.name || '?').trim().charAt(0).toUpperCase();
   $('tabTeam').hidden = agent.role !== 'admin';
   $('linkCamp').hidden = agent.role !== 'admin';
-  showTab('inbox');
+  showTab(location.hash === '#equipe' && agent.role === 'admin' ? 'team' : 'inbox');
   try { S.agents = await api('/api/agents'); } catch (_) { S.agents = []; }
+  await loadTeams();
   loadList();
   S.timers.push(setInterval(loadList, 4000));
   S.timers.push(setInterval(() => { if (S.sel && document.visibilityState === 'visible') loadChat(false); }, 3000));
+  S.timers.push(setInterval(loadTeams, 60000));
 }
 
 async function boot() {
@@ -342,16 +321,42 @@ function beep() {
   } catch (_) { /* ignora */ }
 }
 
+// ---------- equipes (dados e filtro) ----------
+async function loadTeams() {
+  try { S.teams = await api('/api/teams'); } catch (_) { return; }
+  fillTeamFilter();
+  S.headSig = '';
+}
+
+function fillTeamFilter() {
+  const sel = $('teamFilter');
+  sel.textContent = '';
+  sel.hidden = !S.teams.length;
+  sel.append(new Option('Todas as equipes', 'all'));
+  if (S.teams.some((t) => t.mine)) sel.append(new Option('Minhas equipes', 'mine'));
+  for (const t of S.teams) sel.append(new Option(t.name, t.id));
+  sel.append(new Option('Sem equipe', 'none'));
+  sel.value = [...sel.options].some((o) => o.value === S.teamFilter) ? S.teamFilter : 'all';
+  S.teamFilter = sel.value;
+}
+$('teamFilter').onchange = () => { S.teamFilter = $('teamFilter').value; loadList(); };
+
 // ---------- lista de conversas ----------
+function updateUnread(n) {
+  if (S.unread !== null && n > S.unread) beep();
+  S.unread = n;
+  document.title = (n ? `(${n}) ` : '') + 'Finly';
+  const b = $('navBadge');
+  b.hidden = !n; b.textContent = String(n || '');
+}
+
 async function loadList() {
   const my = ++S.listReq;
   try {
-    const r = await api('/api/inbox/conversations?' + new URLSearchParams({ filter: S.filter, q: S.q }));
+    const r = await api('/api/inbox/conversations?' + new URLSearchParams({ filter: S.filter, q: S.q, team: S.teamFilter }));
     if (my !== S.listReq) return;
     renderList(r.items);
-    if (S.unread !== null && r.unread_conversations > S.unread) beep();
-    S.unread = r.unread_conversations;
-    document.title = (S.unread ? `(${S.unread}) ` : '') + 'Finly';
+    updateUnread(r.unread_conversations);
   } catch (_) { /* tenta de novo no proximo ciclo */ }
 }
 
@@ -361,16 +366,18 @@ function renderList(items) {
   list.textContent = '';
   if (!items.length) list.append(el('div', 'Nenhuma conversa aqui.', 'empty'));
   for (const c of items) {
-    const row = el('div', undefined, 'conv' + (c.id === S.sel ? ' on' : ''));
-    row.append(el('div', convName(c).charAt(0).toUpperCase() || '?', 'avatar'));
+    const row = el('div', undefined, 'conv' + (c.id === S.sel ? ' on' : '') + (c.unread_count > 0 ? ' unread' : ''));
+    const strip = el('span', undefined, 'strip tm' + (c.team ? '' : ' none'));
+    if (c.team) strip.style.setProperty('--h', String(teamHue(c.team.id)));
     const mid = el('div', undefined, 'mid');
     const t = el('div', undefined, 'top');
     t.append(el('span', convName(c), 'name'), el('span', fmtTime(c.last_message_at), 'time'));
     const meta = el('div', undefined, 'meta');
-    meta.append(el('span', c.assignee ? c.assignee.name : 'Sem atendente'));
+    meta.append(el('span', c.assignee ? c.assignee.name : 'Sem atendente', 'hint'));
+    if (c.team) meta.append(teamChip(c.team));
     if (c.unread_count > 0) meta.append(el('span', String(c.unread_count), 'badge'));
     mid.append(t, el('div', c.last_message_preview || '', 'prev'), meta);
-    row.append(mid);
+    row.append(strip, avatarEl(convName(c)), mid);
     row.onclick = () => openConv(c.id);
     list.append(row);
   }
@@ -390,16 +397,23 @@ $('search').oninput = () => {
   searchTimer = setTimeout(() => { S.q = $('search').value.trim(); loadList(); }, 300);
 };
 
-// ---------- chat ----------
+// ---------- atendimento ----------
 function openConv(id) {
   S.sel = id; S.msgSig = ''; S.headSig = '';
   setPending(null);
   $('inbox').classList.add('chat-open');
+  $('app').classList.add('in-chat');
   $('chatEmpty').hidden = true; $('chatBox').hidden = false;
   loadChat(true);
   loadList();
 }
-$('back').onclick = () => { S.sel = null; $('inbox').classList.remove('chat-open'); $('chatBox').hidden = true; $('chatEmpty').hidden = false; loadList(); };
+$('back').onclick = () => {
+  S.sel = null;
+  $('inbox').classList.remove('chat-open');
+  $('app').classList.remove('in-chat');
+  $('chatBox').hidden = true; $('chatEmpty').hidden = false;
+  loadList();
+};
 
 async function loadChat(forceScroll) {
   const id = S.sel;
@@ -416,35 +430,55 @@ async function loadChat(forceScroll) {
 }
 
 function renderHead(c) {
-  const sig = [c.status, c.assigned_to, S.agents.length].join('|');
-  $('chatTitle').textContent = convName(c);
-  $('chatSub').textContent =
-    (c.contact && c.contact.phone ? '+' + c.contact.phone + ' · ' : '') +
-    (c.channel ? c.channel.name + ' · ' : '') +
-    (c.assignee ? 'Atendente: ' + c.assignee.name : 'Sem atendente');
+  const sig = [c.status, c.assigned_to, c.team_id, S.agents.length, S.teams.length].join('|');
+  const name = convName(c);
+  $('chatTitle').textContent = name;
+  const av = $('chatAvatar');
+  av.textContent = (String(name).trim().charAt(0) || '?').toUpperCase();
+  av.style.setProperty('--av', String(hash(name) % 360));
+
+  const sub = $('chatSub');
+  sub.textContent = '';
+  if (c.contact && c.contact.phone) sub.append(el('span', '+' + c.contact.phone));
+  sub.append(el('span', c.assignee ? 'Atendente: ' + c.assignee.name : 'Sem atendente'));
+  if (c.team) sub.append(teamChip(c.team));
+
   if (sig === S.headSig) return;
   S.headSig = sig;
 
   const ctl = $('chatCtl');
   ctl.textContent = '';
   if (c.assigned_to !== S.me.id) {
-    const b = el('button', 'Assumir'); b.className = 'primary';
-    b.onclick = async () => { await act(`/api/inbox/conversations/${c.id}/assign`, { agent_id: S.me.id }); };
+    const b = el('button', 'Assumir', 'primary');
+    b.onclick = () => act(`/api/inbox/conversations/${c.id}/assign`, { agent_id: S.me.id });
     ctl.append(b);
   }
   const sel = el('select');
+  sel.setAttribute('aria-label', 'Transferir para atendente');
   sel.append(new Option('Transferir para...', ''));
   for (const a of S.agents) if (a.id !== c.assigned_to) sel.append(new Option(a.name, a.id));
   if (c.assigned_to) sel.append(new Option('Deixar sem atendente', 'none'));
-  sel.onchange = async () => {
+  sel.onchange = () => {
     if (!sel.value) return;
-    await act(`/api/inbox/conversations/${c.id}/assign`, { agent_id: sel.value === 'none' ? null : sel.value });
+    act(`/api/inbox/conversations/${c.id}/assign`, { agent_id: sel.value === 'none' ? null : sel.value });
   };
   ctl.append(sel);
+
+  if (S.teams.length) {
+    const ts = el('select');
+    ts.setAttribute('aria-label', 'Enviar para equipe');
+    ts.append(new Option('Enviar para equipe...', ''));
+    for (const t of S.teams) if (t.id !== c.team_id) ts.append(new Option(t.name, t.id));
+    if (c.team_id) ts.append(new Option('Tirar da equipe', 'none'));
+    ts.onchange = () => {
+      if (!ts.value) return;
+      act(`/api/inbox/conversations/${c.id}/team`, { team_id: ts.value === 'none' ? null : ts.value });
+    };
+    ctl.append(ts);
+  }
+
   const closeBtn = el('button', c.status === 'open' ? 'Encerrar' : 'Reabrir');
-  closeBtn.onclick = async () => {
-    await act(`/api/inbox/conversations/${c.id}/status`, { status: c.status === 'open' ? 'closed' : 'open' });
-  };
+  closeBtn.onclick = () => act(`/api/inbox/conversations/${c.id}/status`, { status: c.status === 'open' ? 'closed' : 'open' });
   ctl.append(closeBtn);
 }
 
@@ -533,7 +567,7 @@ function mediaNode(m) {
   if (!m.has_media) {
     if (m.body && m.body.startsWith('[arquivo grande')) return null;
     const old = Date.now() - new Date(m.created_at).getTime() > 3 * 60 * 1000;
-    wrap.append(el('div', old ? '⚠ Midia indisponivel' : '⏳ Baixando midia...', 'mph'));
+    wrap.append(el('div', old ? '⚠ Mídia indisponível' : '⏳ Baixando mídia...', 'mph'));
     return wrap;
   }
 
@@ -564,12 +598,16 @@ function mediaNode(m) {
 
 function tick(m) {
   if (m.direction !== 'out') return null;
-  const s = el('span');
-  if (m.status === 'queued') s.textContent = ' ...';
-  else if (m.status === 'sent') s.textContent = ' ✓';
-  else if (m.status === 'delivered') s.textContent = ' ✓✓';
-  else if (m.status === 'read') { s.textContent = ' ✓✓'; s.className = 'read'; }
-  else if (m.status === 'failed') { s.textContent = ' falhou'; s.className = 'bad'; s.title = m.error || ''; }
+  const s = el('span', undefined, 'tick');
+  if (m.status === 'queued') s.append(icon('clock'));
+  else if (m.status === 'sent') s.append(icon('check'));
+  else if (m.status === 'delivered') s.append(icon('check2'));
+  else if (m.status === 'read') s.append(icon('check2', 'read'));
+  else if (m.status === 'failed') {
+    s.className = 'tick bad';
+    s.append(icon('alert'), document.createTextNode(' falhou'));
+    s.title = m.error || '';
+  }
   return s;
 }
 
@@ -590,7 +628,8 @@ function renderMsgs(msgs, forceScroll) {
     const mn = mediaNode(m);
     if (mn) b.append(mn);
     if (m.body) b.append(mn ? el('div', m.body, 'cap') : document.createTextNode(m.body));
-    const meta = el('div', fmtHour(m.created_at), 'm');
+    const meta = el('div', undefined, 'm');
+    meta.append(el('span', fmtHour(m.created_at)));
     const t = tick(m); if (t) meta.append(t);
     b.append(meta);
     box.append(b);
@@ -598,6 +637,7 @@ function renderMsgs(msgs, forceScroll) {
   if (forceScroll || near) box.scrollTop = box.scrollHeight;
 }
 
+// ---------- envio ----------
 async function uploadFile(convId, file, caption, retry = true) {
   const res = await fetch(`/api/inbox/conversations/${convId}/media`, {
     method: 'POST',
@@ -617,7 +657,7 @@ async function uploadFile(convId, file, caption, retry = true) {
 }
 
 function setPending(file) {
-  if (file && file.size > MAX_UPLOAD) { alert('Arquivo muito grande (maximo 20 MB).'); return; }
+  if (file && file.size > MAX_UPLOAD) { alert('Arquivo muito grande (máximo 20 MB).'); return; }
   S.pending = file || null;
   $('pending').hidden = !file;
   $('pendName').textContent = file ? `${file.name} (${fmtSize(file.size)})` : '';
@@ -637,6 +677,7 @@ async function sendMsg() {
     if (file) await uploadFile(S.sel, file, text);
     else await post(`/api/inbox/conversations/${S.sel}/reply`, { text });
     $('text').value = '';
+    $('text').style.height = '';
     setPending(null);
     S.headSig = '';
     await loadChat(true);
@@ -667,40 +708,50 @@ $('chat').addEventListener('drop', (ev) => {
   if (f) setPending(f);
 });
 $('text').onkeydown = (ev) => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); sendMsg(); } };
+$('text').addEventListener('input', () => {
+  const t = $('text'); t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 140) + 'px';
+});
 
-// ---------- equipe (admin) ----------
+// ---------- equipes e atendentes (administrador) ----------
 async function loadTeam() {
-  const root = $('agents');
   try {
-    const list = await api('/api/agents');
-    S.agents = list.filter((a) => a.active);
-    root.textContent = '';
-    for (const a of list) {
-      const row = el('div', undefined, 'agent' + (a.active ? '' : ' off'));
-      const info = el('div', undefined, 'info');
-      info.append(el('b', a.name + (a.id === S.me.id ? ' (voce)' : '')),
-        el('small', `${a.email} · ${a.role === 'admin' ? 'Administrador' : 'Atendente'}${a.active ? '' : ' · inativo'}`));
-      row.append(info);
-
-      const pass = el('button', 'Nova senha');
-      pass.onclick = async () => {
-        const p = prompt('Nova senha para ' + a.name + ' (minimo 8 caracteres):');
-        if (p) await teamAct(a.id, { password: p }, 'Senha alterada.');
-      };
-      const role = el('button', a.role === 'admin' ? 'Tornar atendente' : 'Tornar admin');
-      role.onclick = () => teamAct(a.id, { role: a.role === 'admin' ? 'agent' : 'admin' });
-      const act2 = el('button', a.active ? 'Desativar' : 'Ativar');
-      if (a.active) act2.className = 'danger';
-      act2.onclick = () => teamAct(a.id, { active: !a.active });
-      row.append(pass, role, act2);
-      root.append(row);
-    }
+    const [agents, teams] = await Promise.all([api('/api/agents'), api('/api/teams')]);
+    S.agents = agents.filter((a) => a.active);
+    S.teams = teams;
+    fillTeamFilter();
+    renderAgents(agents);
+    renderTeams(teams);
   } catch (e) {
-    root.textContent = 'Erro: ' + e.message;
+    $('agents').textContent = 'Erro: ' + e.message;
   }
 }
 
-async function teamAct(id, body, okMsg) {
+function renderAgents(list) {
+  const root = $('agents');
+  root.textContent = '';
+  for (const a of list) {
+    const row = el('div', undefined, 'agent' + (a.active ? '' : ' off'));
+    row.append(avatarEl(a.name, 'sm'));
+    const info = el('div', undefined, 'info');
+    info.append(el('b', a.name + (a.id === S.me.id ? ' (você)' : '')),
+      el('small', `${a.email} - ${a.role === 'admin' ? 'Administrador' : 'Atendente'}${a.active ? '' : ' (inativo)'}`));
+    row.append(info);
+
+    const pass = el('button', 'Nova senha');
+    pass.onclick = async () => {
+      const p = prompt('Nova senha para ' + a.name + ' (mínimo 8 caracteres):');
+      if (p) await agentAct(a.id, { password: p }, 'Senha alterada.');
+    };
+    const role = el('button', a.role === 'admin' ? 'Tornar atendente' : 'Tornar admin');
+    role.onclick = () => agentAct(a.id, { role: a.role === 'admin' ? 'agent' : 'admin' });
+    const act2 = el('button', a.active ? 'Desativar' : 'Ativar', a.active ? 'danger' : '');
+    act2.onclick = () => agentAct(a.id, { active: !a.active });
+    row.append(pass, role, act2);
+    root.append(row);
+  }
+}
+
+async function agentAct(id, body, okMsg) {
   $('teamErr').textContent = '';
   try {
     await post(`/api/agents/${id}/update`, body);
@@ -721,6 +772,69 @@ $('nAdd').onclick = async () => {
     loadTeam();
   } catch (e) {
     $('teamErr').textContent = e.message;
+  }
+};
+
+function renderTeams(teams) {
+  const root = $('teams');
+  root.textContent = '';
+  if (!teams.length) root.append(el('div', 'Nenhuma equipe ainda. Crie a primeira abaixo.', 'empty'));
+  for (const t of teams) {
+    const card = el('div', undefined, 'team-card tm');
+    card.style.setProperty('--h', String(teamHue(t.id)));
+    const body = el('div', undefined, 'team-body');
+
+    const head = el('div', undefined, 'team-head');
+    head.append(el('b', t.name));
+    const lab = el('label', undefined, 'team-opt');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = !!t.auto_distribute;
+    cb.onchange = () => teamAct(`/api/teams/${t.id}/update`, { auto_distribute: cb.checked });
+    lab.append(cb, document.createTextNode('Distribuir as respostas entre os atendentes da equipe'));
+    head.append(el('span', undefined, 'grow'));
+    const ren = el('button', 'Renomear', 'ghost');
+    ren.onclick = () => { const n = prompt('Novo nome da equipe:', t.name); if (n) teamAct(`/api/teams/${t.id}/update`, { name: n }); };
+    const del = el('button', 'Excluir', 'ghost danger');
+    del.onclick = () => { if (confirm(`Excluir a equipe ${t.name}? As conversas e campanhas dela ficam sem equipe.`)) teamAct(`/api/teams/${t.id}/delete`, {}); };
+    head.append(ren, del);
+
+    const members = el('div', undefined, 'members');
+    for (const m of t.members) {
+      const chip = el('span', m.name, 'chip');
+      const x = el('button'); x.title = 'Remover da equipe'; x.setAttribute('aria-label', 'Remover ' + m.name); x.append(icon('x'));
+      x.onclick = () => teamAct(`/api/teams/${t.id}/members`, { agent_id: m.id, action: 'remove' });
+      chip.append(x);
+      members.append(chip);
+    }
+    if (!t.members.length) members.append(el('small', 'Nenhum atendente nesta equipe ainda.'));
+    const free = S.agents.filter((a) => !t.members.some((m) => m.id === a.id));
+    if (free.length) {
+      const sel = el('select'); sel.setAttribute('aria-label', 'Adicionar atendente');
+      sel.append(new Option('Adicionar atendente...', ''));
+      for (const a of free) sel.append(new Option(a.name, a.id));
+      sel.onchange = () => { if (sel.value) teamAct(`/api/teams/${t.id}/members`, { agent_id: sel.value, action: 'add' }); };
+      members.append(sel);
+    }
+    body.append(head, lab, members);
+    card.append(el('span', undefined, 'strip'), body);
+    root.append(card);
+  }
+}
+
+async function teamAct(path, body) {
+  $('tmErr').textContent = '';
+  try { await post(path, body); } catch (e) { $('tmErr').textContent = e.message; }
+  loadTeam();
+}
+
+$('tmAdd').onclick = async () => {
+  $('tmErr').textContent = '';
+  try {
+    await post('/api/teams', { name: $('tmName').value });
+    $('tmName').value = '';
+    loadTeam();
+  } catch (e) {
+    $('tmErr').textContent = e.message;
   }
 };
 

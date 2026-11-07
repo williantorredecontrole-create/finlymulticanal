@@ -9,6 +9,7 @@ import {
 } from '../services/messaging.js';
 import campaignsRouter from './campaigns.js';
 import inboxRouter from './inbox.js';
+import teamsRouter from './teams.js';
 import { authenticate, requireAdmin } from '../services/auth.js';
 
 const router = Router();
@@ -102,6 +103,7 @@ router.post('/conversations/:id/reply', async (req, res) => {
 });
 
 router.use(inboxRouter);
+router.use(teamsRouter);
 // Contatos e campanhas: somente administradores
 router.use(requireAdmin, campaignsRouter);
 

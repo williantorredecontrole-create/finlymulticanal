@@ -11,6 +11,7 @@ import {
   updateMessageStatus,
 } from '../services/messaging.js';
 import { MAX_INBOUND_BYTES, MEDIA_TYPES, fetchInboundMedia, previewFor } from '../services/media.js';
+import { routeCampaignReply } from '../services/routing.js';
 
 const router = Router();
 
@@ -132,6 +133,11 @@ async function handleUpsert(channel, m) {
         rawMessage: m.message,
       }).catch((e) => console.error('Midia nao baixada:', e.message));
     }, fromMe ? 8000 : 0);
+  }
+
+  // Cliente respondeu a uma campanha: direciona para a equipe da campanha
+  if (!fromMe && !(caption && !mediaKey && isOptOut(caption))) {
+    routeCampaignReply(conversation.id).catch((e) => console.error('Direcionamento:', e.message));
   }
 
   // Descadastro automatico: o contato responde SAIR / PARAR

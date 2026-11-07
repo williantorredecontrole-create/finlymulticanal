@@ -22,6 +22,21 @@ const clamp = (v, min, max, def) => {
 
 // ---------- contatos ----------
 
+// Planilhas costumam vir em MAIUSCULAS (ou minusculas): arruma para "Maria Irislandia da Silva".
+// Nomes ja bem escritos (misturando maiusculas e minusculas) nao sao mexidos.
+const PARTICLES = new Set(['da', 'de', 'do', 'das', 'dos', 'e']);
+function prettyName(raw) {
+  const s = String(raw || '').trim().replace(/\s+/g, ' ');
+  if (!s || !/[a-zà-ÿ]/i.test(s)) return s;
+  if (s !== s.toUpperCase() && s !== s.toLowerCase()) return s;
+  return s
+    .toLowerCase()
+    .split(' ')
+    .map((w, i) => (i > 0 && PARTICLES.has(w) ? w : w.replace(/(^|[-'])([a-zà-ÿ])/g, (_m, p, c) => p + c.toUpperCase())))
+    .join(' ');
+}
+
+
 router.get('/contacts/summary', async (_req, res) => {
   try {
     const count = async (build) => {
@@ -53,7 +68,7 @@ router.post('/contacts/import', async (req, res) => {
         invalid++;
         continue;
       }
-      if (!map.has(phone)) map.set(phone, { phone, name: String(c?.name || '').trim().slice(0, 100) || null });
+      if (!map.has(phone)) map.set(phone, { phone, name: prettyName(c?.name).slice(0, 100) || null });
     }
 
     const phones = [...map.keys()];
@@ -137,7 +152,11 @@ router.get('/campaigns', async (_req, res) => {
       for (const s of st || []) stats[s.campaign_id] = s;
     }
     const empty = { total: 0, pending: 0, sent: 0, delivered: 0, read: 0, failed: 0, skipped: 0 };
-    res.json(camps.map((c) => ({ ...c, stats: stats[c.id] || empty })));
+    const { data: teams } = await supabase.from('teams').select('id,name');
+    const teamName = new Map((teams || []).map((t) => [t.id, t.name]));
+    res.json(
+      camps.map((c) => ({ ...c, team_name: c.team_id ? teamName.get(c.team_id) || null : null, stats: stats[c.id] || empty }))
+    );
   } catch (e) {
     fail(res, e);
   }
@@ -157,6 +176,12 @@ router.post('/campaigns', async (req, res) => {
     const windowEnd = clamp(b.window_end, 1, 24, 20);
     if (windowEnd <= windowStart) return bad(res, 'o horario final deve ser maior que o inicial');
 
+    const teamId = b.team_id || null;
+    if (teamId) {
+      const { data: team } = await supabase.from('teams').select('id').eq('id', teamId).maybeSingle();
+      if (!team) return bad(res, 'equipe nao encontrada');
+    }
+
     let chQuery = supabase.from('channels').select('*').eq('driver', 'evolution_baileys');
     if (b.channel_id) chQuery = chQuery.eq('id', b.channel_id);
     const { data: channel, error: eCh } = await chQuery.order('created_at').limit(1).maybeSingle();
@@ -174,6 +199,7 @@ router.post('/campaigns', async (req, res) => {
         daily_limit: dailyLimit,
         window_start: windowStart,
         window_end: windowEnd,
+        team_id: teamId,
         status: 'draft',
       })
       .select()
@@ -230,6 +256,25 @@ router.get('/campaigns/:id/recipients', async (req, res) => {
     const { data, error } = await q;
     if (error) throw error;
     res.json(data);
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+// { team_id: "uuid" | null } muda a equipe que recebe as respostas (nao vale para campanha encerrada)
+router.post('/campaigns/:id/team', async (req, res) => {
+  try {
+    const teamId = req.body?.team_id || null;
+    const { data: c } = await supabase.from('campaigns').select('id,status').eq('id', req.params.id).maybeSingle();
+    if (!c) return res.status(404).json({ error: 'campanha nao encontrada' });
+    if (['done', 'canceled'].includes(c.status)) return bad(res, 'campanha ja encerrada');
+    if (teamId) {
+      const { data: team } = await supabase.from('teams').select('id').eq('id', teamId).maybeSingle();
+      if (!team) return bad(res, 'equipe nao encontrada');
+    }
+    const { error } = await supabase.from('campaigns').update({ team_id: teamId }).eq('id', c.id);
+    if (error) throw error;
+    res.json({ ok: true });
   } catch (e) {
     fail(res, e);
   }

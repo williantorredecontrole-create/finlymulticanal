@@ -15,6 +15,8 @@ app.use(express.json({ limit: '10mb' }));
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
+app.use('/assets', express.static(path.join(here, '..', 'public', 'assets'), { maxAge: '1h' }));
+
 // Telas: /inbox (atendimento) e /campanhas (administrador)
 app.get('/', (_req, res) => res.redirect('/inbox'));
 app.get('/health', (_req, res) => res.json({ ok: true, app: 'finly-backend' }));

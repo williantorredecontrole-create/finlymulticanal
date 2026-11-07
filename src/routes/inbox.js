@@ -3,6 +3,7 @@ import { supabase } from '../db.js';
 import { sendMediaMessage, sendTextMessage } from '../services/messaging.js';
 import { MAX_BYTES, downloadMedia } from '../services/media.js';
 import { requireAdmin, createAgent, invalidateAgent } from '../services/auth.js';
+import { routeToTeam } from '../services/routing.js';
 
 // Montado dentro de /api (ja autenticado: req.agent existe).
 const router = Router();
@@ -12,7 +13,7 @@ const bad = (res, msg) => res.status(400).json({ error: msg });
 
 const CONV_FIELDS =
   'id,status,unread_count,last_message_at,last_message_preview,assigned_to,channel_id,external_chat_id,' +
-  'contact:contacts(name,phone),channel:channels(name,type),assignee:agents(id,name)';
+  'team_id,contact:contacts(name,phone),channel:channels(name,type),assignee:agents(id,name),team:teams(id,name)';
 
 router.get('/me', (req, res) => res.json({ agent: req.agent }));
 
@@ -25,6 +26,12 @@ async function contactIdsMatching(q) {
   const { data, error } = await supabase.from('contacts').select('id').or(parts.join(',')).limit(200);
   if (error) throw error;
   return data.map((c) => c.id);
+}
+
+async function myTeamIds(agentId) {
+  if (!agentId) return [];
+  const { data } = await supabase.from('team_members').select('team_id').eq('agent_id', agentId);
+  return (data || []).map((r) => r.team_id);
 }
 
 async function unreadConversations() {
@@ -56,6 +63,15 @@ router.get('/inbox/conversations', async (req, res) => {
     }
     if (filter === 'unassigned') query = query.is('assigned_to', null);
     if (filter === 'unread') query = query.gt('unread_count', 0);
+
+    // team: all | mine (minhas equipes) | none (sem equipe) | id de uma equipe
+    const team = String(req.query.team || 'all');
+    if (team === 'none') query = query.is('team_id', null);
+    else if (team === 'mine') {
+      const ids = await myTeamIds(req.agent.id);
+      if (!ids.length) return res.json({ items: [], unread_conversations: unread });
+      query = query.in('team_id', ids);
+    } else if (team !== 'all' && /^[\w-]{1,64}$/.test(team)) query = query.eq('team_id', team);
 
     if (q) {
       const ids = await contactIdsMatching(q);
@@ -240,6 +256,31 @@ router.post('/inbox/conversations/:id/assign', async (req, res) => {
     const { error } = await supabase.from('conversations').update({ assigned_to: agentId }).eq('id', req.params.id);
     if (error) throw error;
     res.json({ ok: true });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+// { team_id: "uuid" } envia para a equipe; { team_id: null } tira da equipe
+router.post('/inbox/conversations/:id/team', async (req, res) => {
+  try {
+    const teamId = req.body?.team_id || null;
+    const { data: conv, error } = await supabase
+      .from('conversations')
+      .select('id,assigned_to,team_id')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!conv) return res.status(404).json({ error: 'conversa nao encontrada' });
+
+    if (!teamId) {
+      const { error: e2 } = await supabase.from('conversations').update({ team_id: null }).eq('id', conv.id);
+      if (e2) throw e2;
+      return res.json({ ok: true, assigned_to: conv.assigned_to });
+    }
+    const r = await routeToTeam(conv, teamId);
+    if (!r) return bad(res, 'equipe nao encontrada');
+    res.json({ ok: true, assigned_to: r.assignedTo });
   } catch (e) {
     fail(res, e);
   }
