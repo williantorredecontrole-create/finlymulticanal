@@ -2,7 +2,7 @@ import { supabase } from '../db.js';
 import { getOrCreateConversation, resolveJid, sendMediaMessage, sendTextMessage } from './messaging.js';
 import { downloadMedia } from './media.js';
 
-// Motor de disparos. Roda dentro do proprio servidor: a cada 3 segundos olha as
+// Motor de disparos. Roda dentro do proprio servidor: a cada 1 segundo olha as
 // campanhas "running" e envia no maximo 1 mensagem por campanha, respeitando:
 //  - delay aleatorio entre mensagens (min_delay_s a max_delay_s)
 //  - limite diario (daily_limit)
@@ -206,6 +206,6 @@ export function startCampaignWorker() {
     } finally {
       busy = false;
     }
-  }, 3000);
+  }, 1000);
   console.log('Motor de campanhas ligado.');
 }

@@ -127,31 +127,34 @@ router.post('/inbox/conversations/:id/read', async (req, res) => {
 
 router.post('/inbox/conversations/:id/reply', async (req, res) => {
   try {
+    const t0 = Date.now();
     const text = String(req.body?.text || '').trim();
     if (!text) return bad(res, 'escreva a mensagem');
     if (text.length > 4000) return bad(res, 'mensagem muito longa (maximo 4000 caracteres)');
 
-    const { data: conversation, error } = await supabase
+    // conversa e canal em uma consulta so
+    const { data: found, error } = await supabase
       .from('conversations')
-      .select('*')
+      .select('*, channel:channels(*)')
       .eq('id', req.params.id)
       .maybeSingle();
     if (error) throw error;
-    if (!conversation) return res.status(404).json({ error: 'conversa nao encontrada' });
+    if (!found) return res.status(404).json({ error: 'conversa nao encontrada' });
+    const { channel, ...conversation } = found;
+    if (!channel) throw new Error('canal da conversa nao encontrado');
 
-    const { data: channel, error: e2 } = await supabase
-      .from('channels')
-      .select('*')
-      .eq('id', conversation.channel_id)
-      .single();
-    if (e2) throw e2;
-
-    const message = await sendTextMessage({ channel, conversation, text, sentBy: req.agent.id });
-
-    // Quem responde primeiro assume a conversa
-    if (!conversation.assigned_to && req.agent.id) {
-      await supabase.from('conversations').update({ assigned_to: req.agent.id }).eq('id', conversation.id);
-    }
+    // Quem responde primeiro assume a conversa (junto com o envio, sem esperar mais uma consulta)
+    const claim = !conversation.assigned_to && req.agent.id;
+    const message = await sendTextMessage({
+      channel,
+      conversation,
+      text,
+      sentBy: req.agent.id,
+      delay: 0, // atendente ja digitou: sem "digitando..." artificial
+      deferBookkeeping: true,
+      afterSend: claim ? () => supabase.from('conversations').update({ assigned_to: req.agent.id }).eq('id', conversation.id) : null,
+    });
+    res.set('Server-Timing', `total;dur=${Date.now() - t0}`);
     res.json({ ok: true, message });
   } catch (e) {
     fail(res, e);
@@ -183,21 +186,17 @@ router.post('/inbox/conversations/:id/media', rawBody, async (req, res) => {
     const fileName = decode(req.get('x-file-name')).trim().slice(0, 120) || null;
     const caption = decode(req.get('x-caption')).trim().slice(0, 1000) || null;
 
-    const { data: conversation, error } = await supabase
+    const { data: found, error } = await supabase
       .from('conversations')
-      .select('*')
+      .select('*, channel:channels(*)')
       .eq('id', req.params.id)
       .maybeSingle();
     if (error) throw error;
-    if (!conversation) return res.status(404).json({ error: 'conversa nao encontrada' });
+    if (!found) return res.status(404).json({ error: 'conversa nao encontrada' });
+    const { channel, ...conversation } = found;
+    if (!channel) throw new Error('canal da conversa nao encontrado');
 
-    const { data: channel, error: e2 } = await supabase
-      .from('channels')
-      .select('*')
-      .eq('id', conversation.channel_id)
-      .single();
-    if (e2) throw e2;
-
+    const claim = !conversation.assigned_to && req.agent.id;
     const message = await sendMediaMessage({
       channel,
       conversation,
@@ -206,11 +205,8 @@ router.post('/inbox/conversations/:id/media', rawBody, async (req, res) => {
       fileName,
       caption,
       sentBy: req.agent.id,
+      afterSend: claim ? () => supabase.from('conversations').update({ assigned_to: req.agent.id }).eq('id', conversation.id) : null,
     });
-
-    if (!conversation.assigned_to && req.agent.id) {
-      await supabase.from('conversations').update({ assigned_to: req.agent.id }).eq('id', conversation.id);
-    }
     res.json({ ok: true, message });
   } catch (e) {
     fail(res, e);

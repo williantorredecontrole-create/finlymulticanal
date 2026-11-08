@@ -31,8 +31,11 @@ async function call(path, { method = 'POST', body } = {}) {
 }
 
 // number pode ser telefone (5562999999999) ou JID (5562999999999@s.whatsapp.net)
-export async function sendText(instance, number, text) {
-  const data = await call(`/message/sendText/${enc(instance)}`, { body: { number, text } });
+// delay (ms): tempo de "digitando..." antes de enviar. Nas respostas de atendentes usamos 0 (sem espera).
+export async function sendText(instance, number, text, { delay } = {}) {
+  const body = { number, text };
+  if (delay !== undefined) body.delay = delay;
+  const data = await call(`/message/sendText/${enc(instance)}`, { body });
   return { externalId: data?.key?.id || null, raw: data };
 }
 

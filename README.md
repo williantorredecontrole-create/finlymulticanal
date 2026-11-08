@@ -78,3 +78,13 @@ Rode `finly_migracao_03_inbox.sql` no Supabase antes do deploy.
 ## Visual
 
 - Estilos em `public/assets/app.css` (compartilhado). A cor identifica a equipe em toda a interface.
+
+## Velocidade e diagnostico
+
+- Resposta de atendente: grava no banco e envia pela Evolution ao mesmo tempo; o fechamento do registro vem logo em
+  seguida. A tela mostra a mensagem na hora (relogio) e confirma depois.
+- Os logs do Railway mostram o tempo de cada envio: `[envio] texto total=...ms evolution=...ms` e
+  `[webhook] mensagem processada em ...ms`. O cabecalho `Server-Timing` da resposta traz o total.
+- Se `evolution` for a maior parte do tempo, a demora esta na Evolution/WhatsApp. Se `total` for muito maior que
+  `evolution`, a demora esta na distancia entre o servidor e o Supabase (confira as regioes dos dois).
+- `COMPANY_NAME` (opcional) mostra o nome da empresa na tela de entrada.

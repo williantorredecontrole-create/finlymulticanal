@@ -37,7 +37,17 @@ export async function resolveJid(channel, phone) {
 
 // ---------- canais ----------
 
+const channelCache = new Map(); // instancia -> { channel, exp }
+
 export async function getChannelByInstance(instance) {
+  const hit = channelCache.get(instance);
+  if (hit && hit.exp > Date.now()) return hit.channel;
+  const channel = await loadChannelByInstance(instance);
+  channelCache.set(instance, { channel, exp: Date.now() + 60_000 });
+  return channel;
+}
+
+async function loadChannelByInstance(instance) {
   const { data, error } = await supabase
     .from('channels')
     .select('*')
@@ -119,18 +129,18 @@ export async function getOrCreateConversation(channelId, jid, contactId) {
 }
 
 async function touchConversation(conversationId, preview, inbound, at = new Date()) {
-  const { data: conv } = await supabase
-    .from('conversations')
-    .select('unread_count')
-    .eq('id', conversationId)
-    .single();
-
+  let unread = 0;
+  if (inbound) {
+    // mensagem recebida: soma 1 ao contador de nao lidas (enviar zera, sem precisar consultar)
+    const { data: conv } = await supabase.from('conversations').select('unread_count').eq('id', conversationId).single();
+    unread = (conv?.unread_count || 0) + 1;
+  }
   await supabase
     .from('conversations')
     .update({
       last_message_at: at.toISOString(),
       last_message_preview: (preview || '').slice(0, 120),
-      unread_count: inbound ? (conv?.unread_count || 0) + 1 : 0,
+      unread_count: unread,
       status: 'open',
     })
     .eq('id', conversationId);
@@ -216,39 +226,79 @@ async function finalizeOutbound(row, externalId) {
   return row.id;
 }
 
-// Envia texto e registra no banco. Reaproveitado depois pelos disparos.
-export async function sendTextMessage({ channel, conversation, text, campaignId = null, sentBy = null }) {
-  const { data: row, error } = await supabase
-    .from('messages')
-    .insert({
-      conversation_id: conversation.id,
-      channel_id: channel.id,
-      direction: 'out',
-      type: 'text',
-      body: text,
-      status: 'queued',
-      campaign_id: campaignId,
-      ...(sentBy ? { sent_by: sentBy } : {}), // atendente que enviou (so quando houver)
-    })
-    .select()
-    .single();
-  if (error) throw error;
+// Envia texto e registra no banco. Grava e envia AO MESMO TEMPO e termina o resto em paralelo,
+// para o atendente nao esperar varias idas e voltas ao banco.
+//  afterSend: tarefa extra (ex.: assumir a conversa) que roda junto com o fechamento do registro.
+//  delay: tempo de "digitando..." na Evolution (use 0 em respostas de atendentes).
+export async function sendTextMessage({ channel, conversation, text, campaignId = null, sentBy = null, delay, afterSend = null, deferBookkeeping = false }) {
+  const t0 = Date.now();
+  const base = {
+    conversation_id: conversation.id,
+    channel_id: channel.id,
+    direction: 'out',
+    type: 'text',
+    body: text,
+    campaign_id: campaignId,
+    ...(sentBy ? { sent_by: sentBy } : {}), // atendente que enviou (so quando houver)
+  };
 
-  try {
-    const { externalId } = await evolution.sendText(channel.instance_name, conversation.external_chat_id, text);
-    const messageId = externalId ? await finalizeOutbound(row, externalId) : row.id;
-    await touchConversation(conversation.id, text, false);
-    return { id: messageId, external_id: externalId, status: 'sent' };
-  } catch (e) {
-    await supabase
-      .from('messages')
-      .update({ status: 'failed', error: String(e.message).slice(0, 500) })
-      .eq('id', row.id);
-    throw e;
+  const insertP = supabase.from('messages').insert({ ...base, status: 'queued' }).select().single();
+  const sendP = (async () => {
+    const s = Date.now();
+    const r = await evolution.sendText(channel.instance_name, conversation.external_chat_id, text, { delay });
+    r.ms = Date.now() - s;
+    return r;
+  })();
+  const [ins, snd] = await Promise.allSettled([insertP, sendP]);
+
+  const insertError = ins.status === 'rejected' ? ins.reason : ins.value.error;
+  let row = insertError ? null : ins.value.data;
+
+  if (snd.status === 'rejected') {
+    if (row) {
+      await supabase
+        .from('messages')
+        .update({ status: 'failed', error: String(snd.reason.message).slice(0, 500) })
+        .eq('id', row.id);
+    }
+    throw snd.reason;
   }
+
+  const { externalId, ms: evolutionMs } = snd.value;
+
+  // Enviou, mas nao conseguiu gravar antes: grava agora (a mensagem ja foi para o cliente)
+  if (!row) {
+    console.error('Mensagem enviada, mas o registro falhou; tentando de novo:', insertError?.message);
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({ ...base, status: 'sent', external_id: externalId, sent_at: new Date().toISOString() })
+      .select()
+      .single();
+    if (error) console.error('Nao foi possivel registrar a mensagem enviada:', error.message);
+    row = data || null;
+  }
+
+  const finish = () =>
+    Promise.all([
+      row && externalId ? finalizeOutbound(row, externalId) : row?.id ?? null,
+      touchConversation(conversation.id, text, false),
+      afterSend ? Promise.resolve().then(afterSend).catch((e) => console.error('Pos-envio:', e.message)) : null,
+    ]);
+
+  // Respostas de atendentes: a mensagem ja saiu, entao responde agora e fecha o registro logo em seguida
+  if (deferBookkeeping) {
+    finish().catch((e) => console.error('Fechamento do registro:', e.message));
+    console.log(`[envio] texto total=${Date.now() - t0}ms evolution=${evolutionMs}ms (registro fecha em seguida)`);
+    return { id: row?.id ?? null, external_id: externalId, status: 'sent' };
+  }
+
+  const [messageId] = await finish();
+  console.log(`[envio] texto total=${Date.now() - t0}ms evolution=${evolutionMs}ms`);
+  return { id: messageId, external_id: externalId, status: 'sent' };
 }
 
 // Envia imagem, video, audio ou documento: guarda no Storage, envia pela Evolution e registra.
+// Guardar o arquivo, gravar o registro e enviar acontecem ao mesmo tempo.
 export async function sendMediaMessage({
   channel,
   conversation,
@@ -259,37 +309,35 @@ export async function sendMediaMessage({
   sentBy = null,
   campaignId = null,
   existingPath = null, // campanhas: o arquivo ja esta no Storage, nao guarda uma copia por contato
+  afterSend = null,
 }) {
+  const t0 = Date.now();
   const kind = kindFromMime(mime);
   const name = fileName || defaultName(kind, mime);
   const path = existingPath || mediaPath(channel.id, conversation.id, name);
-  if (!existingPath) await uploadMedia(path, buffer, mime);
-
   const text = kind === 'audio' ? null : caption || null; // audio nao tem legenda
-  const { data: row, error } = await supabase
-    .from('messages')
-    .insert({
-      conversation_id: conversation.id,
-      channel_id: channel.id,
-      direction: 'out',
-      type: kind,
-      body: text,
-      status: 'queued',
-      media_path: path,
-      media_mime: mime,
-      media_name: name,
-      media_size: buffer.length,
-      ...(campaignId ? { campaign_id: campaignId } : {}),
-      ...(sentBy ? { sent_by: sentBy } : {}),
-    })
-    .select()
-    .single();
-  if (error) throw error;
 
-  try {
+  const base = {
+    conversation_id: conversation.id,
+    channel_id: channel.id,
+    direction: 'out',
+    type: kind,
+    body: text,
+    media_path: path,
+    media_mime: mime,
+    media_name: name,
+    media_size: buffer.length,
+    ...(campaignId ? { campaign_id: campaignId } : {}),
+    ...(sentBy ? { sent_by: sentBy } : {}),
+  };
+
+  const insertP = supabase.from('messages').insert({ ...base, status: 'queued' }).select().single();
+  const uploadP = existingPath ? Promise.resolve() : uploadMedia(path, buffer, mime);
+  const sendP = (async () => {
+    const s = Date.now();
     const base64 = buffer.toString('base64');
     const target = conversation.external_chat_id;
-    const { externalId } =
+    const r =
       kind === 'audio'
         ? await evolution.sendAudio(channel.instance_name, target, { mimetype: mime, base64 })
         : await evolution.sendMedia(channel.instance_name, target, {
@@ -299,16 +347,55 @@ export async function sendMediaMessage({
             caption: text,
             base64,
           });
-    const messageId = externalId ? await finalizeOutbound(row, externalId) : row.id;
-    await touchConversation(conversation.id, previewFor(kind, text, name), false);
-    return { id: messageId, external_id: externalId, status: 'sent' };
-  } catch (e) {
-    await supabase
-      .from('messages')
-      .update({ status: 'failed', error: String(e.message).slice(0, 500) })
-      .eq('id', row.id);
-    throw e;
+    r.ms = Date.now() - s;
+    return r;
+  })();
+  const [ins, upl, snd] = await Promise.allSettled([insertP, uploadP, sendP]);
+
+  const insertError = ins.status === 'rejected' ? ins.reason : ins.value.error;
+  let row = insertError ? null : ins.value.data;
+  const uploadFailed = upl.status === 'rejected';
+
+  if (snd.status === 'rejected') {
+    if (row) {
+      await supabase
+        .from('messages')
+        .update({ status: 'failed', error: String(snd.reason.message).slice(0, 500) })
+        .eq('id', row.id);
+    }
+    throw snd.reason;
   }
+
+  const { externalId, ms: evolutionMs } = snd.value;
+
+  if (uploadFailed) console.error('Midia enviada, mas nao foi guardada no Storage:', upl.reason?.message);
+  if (!row) {
+    console.error('Midia enviada, mas o registro falhou; tentando de novo:', insertError?.message);
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({
+        ...base,
+        ...(uploadFailed ? { media_path: null } : {}),
+        status: 'sent',
+        external_id: externalId,
+        sent_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+    if (error) console.error('Nao foi possivel registrar a midia enviada:', error.message);
+    row = data || null;
+  } else if (uploadFailed) {
+    await supabase.from('messages').update({ media_path: null }).eq('id', row.id);
+    row.media_path = null;
+  }
+
+  const [messageId] = await Promise.all([
+    row && externalId ? finalizeOutbound(row, externalId) : row?.id ?? null,
+    touchConversation(conversation.id, previewFor(kind, text, name), false),
+    afterSend ? Promise.resolve().then(afterSend).catch((e) => console.error('Pos-envio:', e.message)) : null,
+  ]);
+  console.log(`[envio] midia(${kind}) total=${Date.now() - t0}ms evolution=${evolutionMs}ms`);
+  return { id: messageId, external_id: externalId, status: 'sent' };
 }
 
 // ---------- descadastro ----------

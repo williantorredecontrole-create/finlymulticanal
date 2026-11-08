@@ -19,6 +19,8 @@ app.use('/assets', express.static(path.join(here, '..', 'public', 'assets'), { m
 
 // Telas: /inbox (atendimento) e /campanhas (administrador)
 app.get('/', (_req, res) => res.redirect('/inbox'));
+// Nome da empresa exibido na tela de entrada (opcional): variavel COMPANY_NAME
+app.get('/brand', (_req, res) => res.json({ company: process.env.COMPANY_NAME || '' }));
 app.get('/health', (_req, res) => res.json({ ok: true, app: 'finly-backend' }));
 app.get('/campanhas', (_req, res) => res.sendFile(path.join(here, '..', 'public', 'campanhas.html')));
 app.use('/webhook', webhook);

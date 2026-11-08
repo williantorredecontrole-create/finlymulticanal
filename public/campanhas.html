@@ -26,7 +26,7 @@
       <span>Finly</span>
     </div>
     <p>Campanhas com limite, intervalo e a equipe certa para cada resposta.</p>
-    <small>Cartão de Todos</small>
+    <small id="brandCompany"></small>
   </div>
   <form class="login-form" id="loginForm">
     <h1>Entrar</h1>
@@ -502,6 +502,7 @@ async function boot() {
   }
 }
 
+fetch('/brand').then((r) => r.json()).then((b) => { $('brandCompany').textContent = b.company || ''; }).catch(() => {});
 setInterval(() => { if (document.visibilityState === 'visible') loadCamps(); }, 10000);
 boot();
 </script>

@@ -173,7 +173,9 @@ async function handleEvent(payload) {
   }
 
   if (event === 'messages.upsert') {
+    const t0 = Date.now();
     for (const m of list) await handleUpsert(channel, m);
+    console.log(`[webhook] mensagem processada em ${Date.now() - t0}ms`);
     return;
   }
 
